@@ -317,9 +317,8 @@ router.get(
       }
 
       const { token, expiresAt } = signReportDownloadToken(report.reportId);
-      const host = req.get("host") || "localhost:8000";
-      const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
-      const downloadUrl = `${proto}://${host}/report/${report.reportId}/download?token=${token}`;
+      const publicAppUrl = process.env.PUBLIC_APP_URL || "http://localhost:8000";
+      const downloadUrl = `${publicAppUrl}/report/${report.reportId}/download?token=${token}`;
 
       return res.status(200).json({
         reportId: report.reportId,
@@ -377,9 +376,8 @@ router.post(
       // Signed fresh at send time — the link is only valid ~10-15 minutes,
       // so any previously-issued token could already be stale.
       const { token } = signReportDownloadToken(report.reportId);
-      const host = req.get("host") || "localhost:8000";
-      const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
-      const downloadUrl = `${proto}://${host}/report/${report.reportId}/download?token=${token}`;
+      const publicAppUrl = process.env.PUBLIC_APP_URL || "http://localhost:8000";
+      const downloadUrl = `${publicAppUrl}/report/${report.reportId}/download?token=${token}`;
 
       await sendReportDownloadEmail({
         to: email,
