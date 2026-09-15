@@ -10,6 +10,11 @@ import { User, UserProfile, ApiError, AuthRequest } from "../types/user";
 import { JWT_SECRET as SECRET } from "../config/jwt";
 import { authRateLimit } from "../middleware/rateLimit";
 import { errorDetails } from "../utils/errors";
+import {
+  decideEmailChange,
+  findConflictingEmailOwner,
+  releaseDeactivatedEmailOwner,
+} from "../services/emailChange.service";
 
 const router = Router();
 const APP_JWT_TTL = process.env.APP_JWT_TTL || "30m";
@@ -129,36 +134,37 @@ router.post(
       // credentials. Map Firebase's sign_in_provider onto an allowed value.
       const authProvider = mapAuthProvider(decoded.firebase?.sign_in_provider);
 
-      // 1. Find the row by Firebase UID.
+      // 1. Find the row by Firebase UID — the only trusted identity.
       let result = await pool.query<User>(
         `SELECT ${USER_COLUMNS} FROM usdusers WHERE firebase_uid = $1`,
         [uid],
       );
       let user = result.rows[0];
 
-      // 2. Re-link by email. Covers two cases:
-      //    (a) migrated bcrypt users that exist by email with no UID yet, and
-      //    (b) a Firebase account that was deleted and recreated for the same
-      //        email (new UID) — e.g. re-registration after deactivation.
-      //    Either way, point the existing row at the current verified UID rather
-      //    than letting the INSERT below collide on the email UNIQUE constraint.
-      if (!user && email) {
+      // 2. First-time link for a pre-Firebase (migrated bcrypt) row ONLY:
+      //    a row that already owns this email but has never been claimed by
+      //    any Firebase identity (firebase_uid IS NULL) and isn't
+      //    deactivated. Gated on the INCOMING TOKEN'S email_verified — an
+      //    unverified, self-attested email is not proof of ownership and
+      //    must never be enough to claim someone else's existing row (that
+      //    was the account-takeover-by-email-match hole this replaces: the
+      //    previous version relinked on a bare email match with no
+      //    verification, firebase_uid-null, or is_active check at all, and
+      //    could reassign ANY existing account — including one already
+      //    claimed by a different firebase_uid — to an attacker who merely
+      //    typed the same email string).
+      if (!user && email && emailVerified) {
         const relinked = await pool.query<User>(
           `UPDATE usdusers
               SET firebase_uid = $1, last_login = NOW()
-            WHERE email = $2
+            WHERE email = $2 AND firebase_uid IS NULL AND is_active = true
           RETURNING ${USER_COLUMNS}`,
           [uid, email],
         );
         user = relinked.rows[0];
-        // Silent by default until now — this reassigns an existing row's
-        // identity purely off an email string match, no other verification.
-        // Logged explicitly so a wrong reassignment (e.g. two different
-        // people who both once used the same address) is traceable after
-        // the fact rather than discovered later as "my data disappeared".
         if (user) {
           console.warn(
-            `[auth/login] relinked usdusers.id=${user.id} (email="${email}") to firebase_uid=${uid}`,
+            `[auth/login] linked pre-Firebase usdusers.id=${user.id} (email="${email}") to firebase_uid=${uid}`,
           );
         }
       }
@@ -168,20 +174,55 @@ router.post(
         return res.status(403).json({ error: "This account has been deleted" });
       }
 
-      // 4. Idempotent upsert keyed on firebase_uid: insert on first login,
+      // 4. Detect a target email this row doesn't already legitimately own —
+      //    either a brand-new signup (no row yet) or a confirmed Firebase-side
+      //    email change (found by firebase_uid, token email differs from
+      //    what's on file — Firebase already required the user to click a
+      //    verification link at the NEW address via verifyBeforeUpdateEmail
+      //    before its own record updated). Either way, run the SAME
+      //    ownership + cooldown check PATCH /account/email enforces before
+      //    ever writing this email onto a row — never trust the token's
+      //    email blindly, and never let the raw UNIQUE constraint be the
+      //    only thing standing between this and an account hijack.
+      const targetEmail = user ? user.email : emailValue;
+      if (!user || targetEmail.toLowerCase() !== emailValue.toLowerCase()) {
+        const conflictOwner = await findConflictingEmailOwner(
+          pool,
+          emailValue,
+          uid,
+        );
+        const decision = decideEmailChange({
+          currentEmailVerified: true,
+          existingOwner: conflictOwner,
+        });
+
+        if (!decision.allowed) {
+          console.warn(
+            `[auth/login] blocked — uid=${uid} tried to claim email="${emailValue}": ${decision.code}`,
+          );
+          return res.status(decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403).json({
+            error: decision.code,
+            details: decision.message,
+          });
+        }
+
+        if (decision.releaseFromUserId) {
+          await releaseDeactivatedEmailOwner(
+            pool,
+            decision.releaseFromUserId,
+            emailValue,
+          );
+        }
+      }
+
+      // 5. Idempotent upsert keyed on firebase_uid: insert on first login,
       //    otherwise mirror email/email_verified and bump last_login. Profile
       //    fields (display_name, profile_image) are only set on insert so we
-      //    never clobber edits the user made via PATCH /profile.
-      //
-      //    This is atomic for the firebase_uid identity (ON CONFLICT
-      //    serializes concurrent logins for the same UID at the DB level —
-      //    no separate check-then-write race there). The remaining failure
-      //    mode is a DIFFERENT row already owning `emailValue` (e.g. an
-      //    unrelated signup, or a stale duplicate) — that still violates
-      //    usdusers_email_key even though the conflict target here is
-      //    firebase_uid, not email. Caught below instead of bubbling to the
-      //    generic 500 handler, since silently overwriting a stranger's
-      //    email onto this row would be an account-hijack bug, not a fix.
+      //    never clobber edits the user made via PATCH /profile. The conflict
+      //    + cooldown check above already ran, so this should never hit
+      //    usdusers_email_key — the catch below is a last-resort backstop
+      //    against a concurrent request racing for the same email between
+      //    that check and this write, not the primary defense.
       try {
         const upserted = await pool.query<User>(
           `INSERT INTO usdusers
@@ -209,20 +250,12 @@ router.post(
           pgErr.code === "23505" &&
           pgErr.constraint === "usdusers_email_key"
         ) {
-          const conflict = await pool.query<{
-            id: number;
-            firebase_uid: string | null;
-          }>(
-            `SELECT id, firebase_uid FROM usdusers WHERE email = $1 AND firebase_uid IS DISTINCT FROM $2`,
-            [emailValue, uid],
-          );
           console.error(
-            `[auth/login] 409 — email collision: uid=${uid} tried to claim email="${emailValue}", ` +
-              `already held by usdusers.id=${conflict.rows[0]?.id ?? "unknown"} ` +
-              `(firebase_uid=${conflict.rows[0]?.firebase_uid ?? "null"})`,
+            `[auth/login] 409 — email collision racing uid=${uid} for email="${emailValue}"`,
           );
           return res.status(409).json({
-            error:
+            error: "EMAIL_ALREADY_IN_USE",
+            details:
               "This email address is already associated with a different account. Please contact support to resolve this before signing in again.",
           });
         }
@@ -342,44 +375,106 @@ router.post(
       );
       let user = result.rows[0];
 
-      // 2. Re-link by email — covers an existing account (e.g. Google or
-      //    credentials) signing in with Apple for the first time. Point it at
-      //    the Apple identity the same way /auth/login re-links Firebase
-      //    providers onto a shared email.
-      if (!user && email) {
+      // 2. First-time link for an existing account (e.g. Google or
+      //    credentials) signing in with Apple for the first time — ONLY when
+      //    that row has never been claimed by any Firebase/provider identity
+      //    (firebase_uid IS NULL) and isn't deactivated, and ONLY when Apple
+      //    itself attests the email is verified. Previously this matched on
+      //    a bare email string with no verification, no firebase_uid-null
+      //    check, and no is_active check — meaning it could reassign ANY
+      //    existing account, including one already claimed by a different
+      //    identity, to whoever authenticated with the same email string.
+      //    That is exactly the account-takeover-by-email-match this closes.
+      if (!user && email && emailVerified) {
         const relinked = await pool.query<User>(
           `UPDATE usdusers
               SET firebase_uid = $1, provider_user_id = $2, last_login = NOW()
-            WHERE email = $3
+            WHERE email = $3 AND firebase_uid IS NULL AND is_active = true
           RETURNING ${USER_COLUMNS}`,
           [appleUid, sub, email],
         );
         user = relinked.rows[0];
+        if (user) {
+          console.warn(
+            `[auth/apple] linked pre-existing usdusers.id=${user.id} (email="${email}") to provider_user_id=${sub}`,
+          );
+        }
       }
 
       if (user && user.is_active === false) {
         return res.status(403).json({ error: "This account has been deleted" });
       }
 
-      // 3. Idempotent upsert keyed on firebase_uid (the column with the
+      // 3. Same conflict + cooldown check /auth/login runs before ever
+      //    writing an email onto a row: covers a brand-new sign-in (no row
+      //    yet) and a confirmed email change (row found by provider_user_id,
+      //    Apple's token email differs from what's on file).
+      const targetEmail = user ? user.email : emailValue;
+      if (!user || targetEmail.toLowerCase() !== emailValue.toLowerCase()) {
+        const conflictOwner = await findConflictingEmailOwner(
+          pool,
+          emailValue,
+          appleUid,
+        );
+        const decision = decideEmailChange({
+          currentEmailVerified: true,
+          existingOwner: conflictOwner,
+        });
+
+        if (!decision.allowed) {
+          console.warn(
+            `[auth/apple] blocked — sub=${sub} tried to claim email="${emailValue}": ${decision.code}`,
+          );
+          return res
+            .status(decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403)
+            .json({ error: decision.code, details: decision.message });
+        }
+
+        if (decision.releaseFromUserId) {
+          await releaseDeactivatedEmailOwner(
+            pool,
+            decision.releaseFromUserId,
+            emailValue,
+          );
+        }
+      }
+
+      // 4. Idempotent upsert keyed on firebase_uid (the column with the
       //    UNIQUE constraint — see firebase_auth.sql): insert on first
       //    sign-in, otherwise mirror email/email_verified and bump
       //    last_login. Profile fields are only set on insert so we never
-      //    clobber PATCH edits.
-      const upserted = await pool.query<User>(
-        `INSERT INTO usdusers
-           (firebase_uid, provider_user_id, email, display_name, profile_image,
-            email_verified, auth_provider, role, is_active, created_at, last_login)
-         VALUES ($1, $2, $3, $4, NULL, $5, 'apple', 'student', true, NOW(), NOW())
-         ON CONFLICT (firebase_uid) DO UPDATE SET
-           email             = EXCLUDED.email,
-           email_verified    = EXCLUDED.email_verified,
-           provider_user_id  = EXCLUDED.provider_user_id,
-           last_login        = NOW()
-         RETURNING ${USER_COLUMNS}`,
-        [appleUid, sub, emailValue, displayName, emailVerified],
-      );
-      user = upserted.rows[0];
+      //    clobber PATCH edits. The conflict + cooldown check above already
+      //    ran, so this is a last-resort backstop against a concurrent
+      //    request racing for the same email, not the primary defense.
+      try {
+        const upserted = await pool.query<User>(
+          `INSERT INTO usdusers
+             (firebase_uid, provider_user_id, email, display_name, profile_image,
+              email_verified, auth_provider, role, is_active, created_at, last_login)
+           VALUES ($1, $2, $3, $4, NULL, $5, 'apple', 'student', true, NOW(), NOW())
+           ON CONFLICT (firebase_uid) DO UPDATE SET
+             email             = EXCLUDED.email,
+             email_verified    = EXCLUDED.email_verified,
+             provider_user_id  = EXCLUDED.provider_user_id,
+             last_login        = NOW()
+           RETURNING ${USER_COLUMNS}`,
+          [appleUid, sub, emailValue, displayName, emailVerified],
+        );
+        user = upserted.rows[0];
+      } catch (err) {
+        const pgErr = err as { code?: string; constraint?: string };
+        if (pgErr.code === "23505" && pgErr.constraint === "usdusers_email_key") {
+          console.error(
+            `[auth/apple] 409 — email collision racing sub=${sub} for email="${emailValue}"`,
+          );
+          return res.status(409).json({
+            error: "EMAIL_ALREADY_IN_USE",
+            details:
+              "This email address is already associated with a different account. Please contact support to resolve this before signing in again.",
+          });
+        }
+        throw err;
+      }
 
       const token = jwt.sign({ sub: user.firebase_uid }, SECRET, {
         expiresIn: APP_JWT_TTL,

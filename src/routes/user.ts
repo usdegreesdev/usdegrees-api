@@ -1,10 +1,14 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { User, UserProfile, UpsertUserBody, ApiError, AuthRequest } from "../types/user";
-import { REACTIVATION_COOLDOWN_HOURS } from "./profile";
 import { verifyToken } from "../middleware/auth";
 import { firebaseAuth } from "../config/firebase";
 import { errorDetails } from "../utils/errors";
+import {
+  decideEmailChange,
+  findConflictingEmailOwner,
+  releaseDeactivatedEmailOwner,
+} from "../services/emailChange.service";
 
 const router = Router();
 
@@ -134,69 +138,140 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
     const { display_name, profile_image, auth_provider, provider_user_id, age_consent } =
       req.body ?? {};
 
-    // Post-deactivation cooldown. If this email belongs to a deactivated row,
-    // block re-use until the cooldown elapses; once it has, free the email off
-    // the old (kept-for-records) row so the upsert below creates a fresh account.
-    const prior = await pool.query<{
+    // 1. Find the row by firebase_uid — the only trusted identity. Doing
+    // this FIRST (rather than the old ON CONFLICT (email) DO UPDATE) is what
+    // makes a Firebase-side email change (same uid, new email — e.g. after
+    // verifyBeforeUpdateEmail) resolve to an UPDATE of this exact row below,
+    // instead of an INSERT attempt that collides on usdusers_firebase_uid_key
+    // because the old row (still holding the old email) already owns that uid.
+    const existingResult = await pool.query<{
       id: number;
+      firebase_uid: string | null;
+      email: string;
       is_active: boolean;
-      deactivated_at: string | null;
     }>(
-      `SELECT id, is_active, deactivated_at FROM usdusers WHERE email = $1`,
-      [email],
+      `SELECT id, firebase_uid, email, is_active FROM usdusers WHERE firebase_uid = $1`,
+      [uid],
     );
-    const priorRow = prior.rows[0];
-    if (priorRow && priorRow.is_active === false && priorRow.deactivated_at) {
-      const eligibleAtMs =
-        new Date(priorRow.deactivated_at).getTime() +
-        REACTIVATION_COOLDOWN_HOURS * 60 * 60 * 1000;
+    let existing = existingResult.rows[0];
 
-      if (eligibleAtMs > Date.now()) {
-        return res.status(403).json({
-          error: "ACCOUNT_COOLDOWN",
-          details: `This account was recently deactivated. You can register again after ${new Date(eligibleAtMs).toISOString()}.`,
+    // 2. First-time link for a pre-Firebase (migrated bcrypt) row ONLY: a row
+    // that already owns this email but has never been claimed by any
+    // Firebase identity (firebase_uid IS NULL) and isn't deactivated, gated
+    // on the token's OWN verified email — an unverified, self-attested email
+    // is not proof of ownership and must never claim someone else's row.
+    if (!existing && emailVerified) {
+      const relinked = await pool.query<{
+        id: number;
+        firebase_uid: string | null;
+        email: string;
+        is_active: boolean;
+      }>(
+        `UPDATE usdusers
+            SET firebase_uid = $1, last_login = NOW()
+          WHERE email = $2 AND firebase_uid IS NULL AND is_active = true
+        RETURNING id, firebase_uid, email, is_active`,
+        [uid, email],
+      );
+      existing = relinked.rows[0];
+    }
+
+    if (existing && existing.is_active === false) {
+      return res.status(403).json({ error: "This account has been deleted" });
+    }
+
+    // 3. Conflict + cooldown check whenever the target email isn't already
+    // this row's own — covers both a brand-new signup and a confirmed
+    // Firebase-side email change. Never let a blind INSERT/UPDATE silently
+    // collide with, or worse, overwrite fields on, a DIFFERENT user's row.
+    if (!existing || existing.email.toLowerCase() !== email.toLowerCase()) {
+      const conflictOwner = await findConflictingEmailOwner(pool, email, uid);
+      const decision = decideEmailChange({
+        currentEmailVerified: true,
+        existingOwner: conflictOwner,
+      });
+
+      if (!decision.allowed) {
+        return res.status(decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403).json({
+          error: decision.code,
+          details: decision.message,
         });
       }
 
-      // Cooldown elapsed — release the email from the old row (kept for records)
-      // so the INSERT below registers a brand-new account.
-      await pool.query(`UPDATE usdusers SET email = $1 WHERE id = $2`, [
-        `deleted+${priorRow.id}+${email}`,
-        priorRow.id,
-      ]);
+      if (decision.releaseFromUserId) {
+        await releaseDeactivatedEmailOwner(pool, decision.releaseFromUserId, email);
+      }
     }
 
-    // role is never client-writable (always 'user' — no authorization
-    // anywhere reads this column today, but it must never become
-    // attacker-controlled). email/email_verified/firebase_uid come from the
-    // verified Firebase token above, never the request body. email_verified
-    // only ratchets true->true; a later unverified token can't un-verify a
-    // row that a prior verified token already confirmed.
-    const result = await pool.query<User>(
-      `INSERT INTO usdusers
-         (firebase_uid, email, display_name, profile_image, auth_provider, role, email_verified, provider_user_id, age_consent, created_at, last_login)
-       VALUES ($1, $2, $3, $4, $5, 'user', $6, $7, $8, NOW(), NOW())
-       ON CONFLICT (email)
-       DO UPDATE SET
-         firebase_uid      = COALESCE(usdusers.firebase_uid, EXCLUDED.firebase_uid),
-         display_name      = COALESCE(EXCLUDED.display_name, usdusers.display_name),
-         profile_image     = COALESCE(EXCLUDED.profile_image, usdusers.profile_image),
-         email_verified    = EXCLUDED.email_verified OR usdusers.email_verified,
-         provider_user_id  = COALESCE(EXCLUDED.provider_user_id, usdusers.provider_user_id),
-         age_consent       = COALESCE(EXCLUDED.age_consent, usdusers.age_consent),
-         last_login        = NOW()
-       RETURNING id, display_name, email, profile_image, role, email_verified, age_consent`,
-      [
-        uid,
-        email,
-        display_name ?? null,
-        profile_image ?? null,
-        auth_provider ?? null,
-        emailVerified,
-        provider_user_id ?? null,
-        age_consent ?? false,
-      ]
-    );
+    // 4. Write, scoped to firebase_uid — UPDATE the caller's own existing
+    // row, or INSERT a fresh one. Never an ON CONFLICT (email) DO UPDATE
+    // that could silently touch a different row.
+    //
+    // role is never client-writable (always 'user' on insert — no
+    // authorization anywhere reads this column today, but it must never
+    // become attacker-controlled, and is left untouched on update).
+    // email/email_verified/firebase_uid come from the verified Firebase
+    // token above, never the request body. email_verified only ratchets
+    // true->true; a later unverified token can't un-verify a row that a
+    // prior verified token already confirmed.
+    let result;
+    try {
+      if (existing) {
+        result = await pool.query<User>(
+          `UPDATE usdusers SET
+             email             = $2,
+             display_name      = COALESCE($3, display_name),
+             profile_image     = COALESCE($4, profile_image),
+             email_verified    = $5 OR email_verified,
+             provider_user_id  = COALESCE($6, provider_user_id),
+             age_consent       = COALESCE($7, age_consent),
+             last_login        = NOW()
+           WHERE firebase_uid = $1
+           RETURNING id, display_name, email, profile_image, role, email_verified, age_consent`,
+          [
+            uid,
+            email,
+            display_name ?? null,
+            profile_image ?? null,
+            emailVerified,
+            provider_user_id ?? null,
+            age_consent ?? false,
+          ],
+        );
+      } else {
+        result = await pool.query<User>(
+          `INSERT INTO usdusers
+             (firebase_uid, email, display_name, profile_image, auth_provider, role, email_verified, provider_user_id, age_consent, created_at, last_login)
+           VALUES ($1, $2, $3, $4, $5, 'user', $6, $7, $8, NOW(), NOW())
+           RETURNING id, display_name, email, profile_image, role, email_verified, age_consent`,
+          [
+            uid,
+            email,
+            display_name ?? null,
+            profile_image ?? null,
+            auth_provider ?? null,
+            emailVerified,
+            provider_user_id ?? null,
+            age_consent ?? false,
+          ],
+        );
+      }
+    } catch (err) {
+      const pgErr = err as { code?: string; constraint?: string };
+      if (pgErr.code === "23505") {
+        // Last-resort backstop against a concurrent request racing for the
+        // same email or uid between the checks above and this write — not
+        // the primary defense.
+        console.error(
+          `[POST /user] 409 — race on ${pgErr.constraint} for uid=${uid}, email="${email}"`,
+        );
+        return res.status(409).json({
+          error: "EMAIL_ALREADY_IN_USE",
+          details: "This email address is already associated with a different account. Please try again.",
+        });
+      }
+      throw err;
+    }
 
     const row = result.rows[0];
     res.status(200).json({

@@ -6,6 +6,15 @@ import { normalizeDegreeLevel } from "../constants/degreeLevels";
 import { getValidStateCodes } from "../db/statesCache";
 import { ApiError, AuthRequest } from "../types/user";
 import { errorDetails } from "../utils/errors";
+import {
+  REACTIVATION_COOLDOWN_HOURS,
+  cooldownEligibleAt,
+} from "../utils/deactivationCooldown";
+import {
+  decideEmailChange,
+  findConflictingEmailOwner,
+  releaseDeactivatedEmailOwner,
+} from "../services/emailChange.service";
 
 const router = Router();
 const accountRouter = Router();
@@ -296,11 +305,8 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
   }
 });
 
-/**
- * Cooldown (hours) a deactivated email must wait before it can be used to
- * register a brand-new account. Shared with POST /user, which enforces it.
- */
-export const REACTIVATION_COOLDOWN_HOURS = 24;
+// REACTIVATION_COOLDOWN_HOURS re-exported for existing importers (POST /user).
+export { REACTIVATION_COOLDOWN_HOURS };
 
 interface DeactivationBody {
   reason_code?: string;
@@ -416,9 +422,7 @@ accountRouter.get(
         return res.json({ available: true });
       }
 
-      const eligibleAtMs =
-        new Date(row.deactivated_at).getTime() +
-        REACTIVATION_COOLDOWN_HOURS * 60 * 60 * 1000;
+      const eligibleAtMs = cooldownEligibleAt(row.deactivated_at);
 
       if (eligibleAtMs > Date.now()) {
         return res.json({
@@ -433,6 +437,237 @@ accountRouter.get(
       console.error("Account availability error:", error);
       res.status(500).json({
         error: "Failed to check account availability",
+        details: errorDetails(error),
+      });
+    }
+  },
+);
+
+interface ChangeEmailBody {
+  newEmail?: string;
+}
+
+/**
+ * PATCH /account/email
+ * Changes the authenticated user's email address.
+ *
+ * Identity comes ONLY from req.userId (the Firebase UID carried in the
+ * verified app JWT via verifyToken) — email/auth_provider/provider_user_id
+ * are never read from the request body, so a client cannot point this at
+ * another account by supplying different identity fields.
+ *
+ * Enforces, in order:
+ *  1. The caller's CURRENT email must already be verified (being logged in
+ *     is not the same as having a verified email).
+ *  2. The new email must not belong to any OTHER usdusers row — verified or
+ *     not. Never auto-merges/re-links; a conflict is always rejected.
+ *  3. If the new email belonged to a deactivated row, the same
+ *     REACTIVATION_COOLDOWN_HOURS window POST /user enforces for signup
+ *     reuse applies here too (see decideEmailChange).
+ *
+ * These checks (and the final UNIQUE constraint on usdusers.email, which is
+ * the hard backstop against two concurrent requests racing for the same
+ * email) hold regardless of what the API is called with — they are not
+ * something a disabled UI button can substitute for.
+ */
+accountRouter.patch(
+  "/email",
+  verifyToken,
+  async (
+    req: AuthRequest & { body?: ChangeEmailBody },
+    res: Response<{ email: string } | ApiError>,
+  ) => {
+    try {
+      const uid = req.userId as string;
+      const rawNewEmail = (req.body ?? {}).newEmail;
+      if (typeof rawNewEmail !== "string" || !rawNewEmail.trim()) {
+        return res.status(400).json({ error: "newEmail is required" });
+      }
+      const newEmail = rawNewEmail.trim().toLowerCase();
+
+      const callerResult = await pool.query<{
+        id: number;
+        email: string;
+        email_verified: boolean;
+      }>(
+        `SELECT id, email, email_verified FROM usdusers WHERE firebase_uid = $1`,
+        [uid],
+      );
+      const caller = callerResult.rows[0];
+      if (!caller) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (newEmail === caller.email.toLowerCase()) {
+        return res
+          .status(400)
+          .json({ error: "New email must be different from your current email" });
+      }
+
+      // Any OTHER row already holding this email — verified, unverified, or
+      // a deactivated row still inside (or past) its cooldown. Excludes the
+      // caller's own row by firebase_uid, not by id, so it can never match a
+      // client-supplied id.
+      const existingOwner = await findConflictingEmailOwner(pool, newEmail, uid);
+
+      const decision = decideEmailChange({
+        currentEmailVerified: caller.email_verified,
+        existingOwner,
+      });
+
+      if (!decision.allowed) {
+        const status =
+          decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403;
+        return res
+          .status(status)
+          .json({ error: decision.code, details: decision.message });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+
+        // Cooldown elapsed on the old deactivated row — release its claim on
+        // this email (kept for records under a namespaced placeholder,
+        // matching POST /user's release logic) before the UPDATE below.
+        if (decision.releaseFromUserId) {
+          await releaseDeactivatedEmailOwner(
+            client,
+            decision.releaseFromUserId,
+            newEmail,
+          );
+        }
+
+        // firebase_uid (from the verified app JWT) is the ONLY identity used
+        // here, so this can only ever update the caller's own row. The
+        // UNIQUE constraint on usdusers.email is still the final backstop if
+        // a concurrent request claimed this exact email between the SELECT
+        // above and this UPDATE.
+        const updated = await client.query<{ id: number; email: string }>(
+          `UPDATE usdusers SET email = $1, email_verified = false
+            WHERE firebase_uid = $2
+          RETURNING id, email`,
+          [newEmail, uid],
+        );
+
+        if (updated.rows.length === 0) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ error: "User not found" });
+        }
+
+        // Mirror onto the Firebase user BEFORE committing the DB row, and
+        // roll the DB back if it fails. Doing this AFTER commit (the
+        // previous version) let the two drift: usdusers.email would advance
+        // to the new address while Firebase's own record silently stayed on
+        // the old one. That drift compounds — Firebase's built-in
+        // "your sign-in email was changed" revert-notification always goes
+        // to whatever email Firebase itself last had on file, so once it
+        // fell behind, EVERY subsequent change kept notifying that same
+        // stale address instead of the account's actual current email. Now
+        // the DB write only survives if Firebase's record was updated too,
+        // so the two can never diverge.
+        try {
+          await firebaseAuth.updateUser(uid, {
+            email: newEmail,
+            emailVerified: false,
+          });
+        } catch (firebaseErr) {
+          await client.query("ROLLBACK");
+          console.error(
+            `[account/email] Firebase updateUser failed for uid=${uid}, DB change rolled back:`,
+            firebaseErr instanceof Error
+              ? firebaseErr.message
+              : String(firebaseErr),
+          );
+          return res.status(500).json({
+            error:
+              "Could not update your sign-in email. Please try again or contact support.",
+          });
+        }
+
+        await client.query("COMMIT");
+
+        return res.json({ email: updated.rows[0].email });
+      } catch (txErr) {
+        await client.query("ROLLBACK");
+        const pgErr = txErr as { code?: string; constraint?: string };
+        if (pgErr.code === "23505" && pgErr.constraint === "usdusers_email_key") {
+          return res.status(409).json({
+            error: "EMAIL_ALREADY_IN_USE",
+            details: "This email address is already associated with another account.",
+          });
+        }
+        throw txErr;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error("Change email error:", error);
+      res.status(500).json({
+        error: "Failed to change email",
+        details: errorDetails(error),
+      });
+    }
+  },
+);
+
+/**
+ * GET /account/email-available?email=...
+ * Authenticated pre-check for the frontend to call BEFORE it kicks off
+ * Firebase's verifyBeforeUpdateEmail, so a doomed-to-conflict email change is
+ * rejected up front instead of confusingly surfacing at the next login (once
+ * Firebase has already sent — and the user has already clicked — a
+ * verification link for an email they can never actually land on). Runs the
+ * exact same decideEmailChange used by PATCH /account/email and the
+ * /auth/login sync; this is a preview, not a separate/weaker check.
+ */
+accountRouter.get(
+  "/email-available",
+  verifyToken,
+  async (
+    req: AuthRequest,
+    res: Response<
+      | { available: true }
+      | { available: false; code: string; details: string }
+      | ApiError
+    >,
+  ) => {
+    try {
+      const uid = req.userId as string;
+      const email = String(req.query.email ?? "")
+        .trim()
+        .toLowerCase();
+      if (!email) {
+        return res.status(400).json({ error: "email is required" });
+      }
+
+      const callerResult = await pool.query<{ email_verified: boolean }>(
+        `SELECT email_verified FROM usdusers WHERE firebase_uid = $1`,
+        [uid],
+      );
+      const caller = callerResult.rows[0];
+      if (!caller) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const existingOwner = await findConflictingEmailOwner(pool, email, uid);
+      const decision = decideEmailChange({
+        currentEmailVerified: caller.email_verified,
+        existingOwner,
+      });
+
+      if (!decision.allowed) {
+        return res.json({
+          available: false,
+          code: decision.code,
+          details: decision.message,
+        });
+      }
+      return res.json({ available: true });
+    } catch (error) {
+      console.error("Email availability check error:", error);
+      res.status(500).json({
+        error: "Failed to check email availability",
         details: errorDetails(error),
       });
     }
