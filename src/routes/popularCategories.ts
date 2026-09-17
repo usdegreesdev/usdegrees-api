@@ -90,7 +90,9 @@ async function tryResolveUserId(req: Request): Promise<number | null> {
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
 
   try {
-    const payload = jwt.verify(authHeader.split(" ")[1], SECRET) as {
+    const payload = jwt.verify(authHeader.split(" ")[1], SECRET, {
+      algorithms: ["HS256"],
+    }) as {
       sub?: string;
     };
     if (!payload.sub) return null;

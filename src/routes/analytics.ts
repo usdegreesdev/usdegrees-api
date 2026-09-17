@@ -95,7 +95,9 @@ async function tryResolveUserId(req: Request): Promise<number | null> {
   }
 
   try {
-    const payload = jwt.verify(authHeader.slice(7).trim(), JWT_SECRET) as {
+    const payload = jwt.verify(authHeader.slice(7).trim(), JWT_SECRET, {
+      algorithms: ["HS256"],
+    }) as {
       sub?: string;
     };
     if (!payload.sub) return null;

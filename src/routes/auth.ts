@@ -18,13 +18,17 @@ import {
 
 const router = Router();
 const APP_JWT_TTL = process.env.APP_JWT_TTL || "30m";
+const APP_JWT_SIGN_OPTIONS = {
+  algorithm: "HS256",
+  expiresIn: APP_JWT_TTL,
+} as SignOptions;
 
 // jwt.sign parses the TTL string at call time, so a malformed APP_JWT_TTL
 // ("half an hour", "30 secs plz") would otherwise turn every login into a 500. Sign a
 // throwaway token at module load to exercise that exact parser — no hand-rolled
 // format check to drift out of sync with jsonwebtoken's accepted formats.
 try {
-  jwt.sign({}, SECRET, { expiresIn: APP_JWT_TTL } as SignOptions);
+  jwt.sign({}, SECRET, APP_JWT_SIGN_OPTIONS);
 } catch (error) {
   throw new Error(
     `Invalid APP_JWT_TTL: ${JSON.stringify(APP_JWT_TTL)}. ` +
@@ -262,9 +266,7 @@ router.post(
         throw err;
       }
 
-      const token = jwt.sign({ sub: uid }, SECRET, {
-        expiresIn: APP_JWT_TTL,
-      } as SignOptions);
+      const token = jwt.sign({ sub: uid }, SECRET, APP_JWT_SIGN_OPTIONS);
       console.log(`[auth/login] 200 — app JWT issued for uid=${uid}`);
       return res.json({ token });
     } catch (error) {
@@ -343,6 +345,18 @@ router.post(
       const sub = payload.sub;
       if (!sub) {
         return res.status(401).json({ error: "Invalid Apple token payload" });
+      }
+
+      // Firebase custom-token uids must be <=128 chars (enforced client-side
+      // by firebase-admin, no network round-trip). We namespace `sub` with an
+      // "apple:" prefix below, which eats 6 of that budget — reject rather
+      // than silently truncate, since truncating risks colliding two
+      // different Apple accounts whose `sub` differs only past the cut.
+      if (`apple:${sub}`.length > 128) {
+        console.error(
+          `[auth/apple] 400 — Apple sub too long for Firebase uid (len=${sub.length})`,
+        );
+        return res.status(400).json({ error: "Invalid Apple token payload" });
       }
 
       const email = typeof payload.email === "string" ? payload.email : null;
@@ -476,9 +490,11 @@ router.post(
         throw err;
       }
 
-      const token = jwt.sign({ sub: user.firebase_uid }, SECRET, {
-        expiresIn: APP_JWT_TTL,
-      } as SignOptions);
+      const token = jwt.sign(
+        { sub: user.firebase_uid },
+        SECRET,
+        APP_JWT_SIGN_OPTIONS,
+      );
 
       // Mint a Firebase custom token for the same uid so the frontend can
       // establish a real Firebase client session (see JSDoc above) — that's

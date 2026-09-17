@@ -35,7 +35,7 @@ export const verifyToken = async (
 
   let payload: AppJwtPayload;
   try {
-    payload = jwt.verify(token, SECRET) as AppJwtPayload;
+    payload = jwt.verify(token, SECRET, { algorithms: ["HS256"] }) as AppJwtPayload;
   } catch (err) {
     // 401 (not 403) so the client re-exchanges a fresh Firebase ID token and
     // retries — an expired app JWT is an auth-refresh case, not "forbidden".
