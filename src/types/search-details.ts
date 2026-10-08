@@ -28,6 +28,7 @@ export interface SearchResult {
   unitid: number;
   is_active: boolean;
   accreditor: string | null;
+  school_url: string | null;
 
   admission_rate: number | null;
   school_min_range: number | null;

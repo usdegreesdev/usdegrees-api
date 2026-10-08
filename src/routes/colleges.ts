@@ -12,7 +12,8 @@
  * Query params:
  *  - search: Filter colleges by name, city, or state (case-insensitive)
  *  - page: Page number (default 1)
- *  - limit: Items per page (default 20, max 100)
+ *  - limit: Items per page (default 20, max 20 anonymous / 50 signed-in)
+ *  - page: max 25
  *
  * Example requests:
  *  GET /colleges                           → First 20 colleges
@@ -27,6 +28,11 @@ import { College, CollegesResponse, ApiError } from "../types/colleges";
 import { getAthleticsProfile } from "../services/athletics.service";
 import { AthleticsProfile } from "../types/athletics";
 import { errorDetails } from "../utils/errors";
+import {
+  CATALOG_CAPS,
+  catalogGuard,
+  parseCatalogPaging,
+} from "../utils/catalogPaging";
 
 const router = Router();
 
@@ -54,14 +60,16 @@ function toStr(val: unknown): string | null {
  */
 router.get(
   "/",
+  ...catalogGuard,
   async (req: Request, res: Response<CollegesResponse | ApiError>) => {
     try {
       // Extract query parameters
+      const paging = parseCatalogPaging(req);
+      if (!paging.ok) {
+        return res.status(400).json({ error: paging.error });
+      }
+      const { page, limit, offset } = paging;
       const search = toStr(req.query.search);
-      const page = Math.max(1, toNum(req.query.page) ?? 1);
-      const limit = Math.min(100, Math.max(1, toNum(req.query.limit) ?? 20));
-
-      const offset = (page - 1) * limit;
 
       // ─────────────────────────────────────────────
       // Build dynamic WHERE clause for search
@@ -152,7 +160,7 @@ router.get(
  *
  * Query params:
  *  - query: Search keyword (required) - matches against school name
- *  - limit: Maximum results to return (default 30, max 100)
+ *  - limit: Maximum results to return (default 20, max 20 anonymous / 50 signed-in)
  *
  * Example requests:
  *  GET /colleges/search?query=stan&limit=5       → Colleges with "stan" in name
@@ -162,16 +170,23 @@ router.get(
  */
 router.get(
   "/search",
+  ...catalogGuard,
   async (req: Request, res: Response<College[] | ApiError>) => {
     try {
       // Extract query parameters
       const query = toStr(req.query.query);
-      const limit = Math.min(100, Math.max(1, toNum(req.query.limit) ?? 30));
+      const paging = parseCatalogPaging(req);
+      if (!paging.ok) {
+        return res.status(400).json({ error: paging.error });
+      }
+      // Autocomplete-style: result count only; a page param is still
+      // validated (and capped) but unused.
+      const limit = paging.limit;
 
       // Validate required parameter
-      if (!query) {
+      if (!query || query.length < CATALOG_CAPS.minTermLength) {
         return res.status(400).json({
-          error: "query parameter is required",
+          error: `query must be at least ${CATALOG_CAPS.minTermLength} characters`,
         });
       }
 

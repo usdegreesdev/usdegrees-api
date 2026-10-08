@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { SearchQueryParams, SearchResult } from "../types/search-details";
 import { normalizeEarningsFillMethod } from "../types/earnings";
+import { catalogGuard, parseCatalogPaging } from "../utils/catalogPaging";
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -40,7 +41,12 @@ function safeNum(value: unknown): number | null {
 *  - state             exact match on schools.state
 *  - title             case-insensitive partial match on programs.title
 */
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", ...catalogGuard, async (req: Request, res: Response) => {
+  const paging = parseCatalogPaging(req);
+  if (!paging.ok) {
+    res.status(400).json({ error: paging.error });
+    return;
+  }
   const { credential_title, state, title } = req.query as SearchQueryParams;
   const params: (string | number)[] = [];
   let whereSql = "";
@@ -137,11 +143,11 @@ router.get("/", async (req: Request, res: Response) => {
     }
   }
 
-  // Parse limit & page if provided
+  // limit/page are validated and capped by parseCatalogPaging (max 20 anon /
+  // 50 signed-in rows, max page 25) - no request can return an unbounded set.
+  // The response shape still depends on whether the caller sent either param.
   const isPaginatedRequest = req.query.limit != null || req.query.page != null;
-  const limitVal = req.query.limit ? Math.min(1000, Math.max(1, parseInt(String(req.query.limit), 10) || 1000)) : 1000;
-  const pageVal = req.query.page ? Math.max(1, parseInt(String(req.query.page), 10) || 1) : 1;
-  const offsetVal = (pageVal - 1) * limitVal;
+  const { limit: limitVal, offset: offsetVal } = paging;
 
   const sql = `
   SELECT DISTINCT
@@ -256,8 +262,20 @@ router.get("/", async (req: Request, res: Response) => {
 
     const shapedResults = rows.map((row) => {
       const earningsYear5Method = normalizeEarningsFillMethod(row.earnings_year_5_method);
+      // Explicit field allowlist - never spread the raw row, so internal
+      // columns (e.g. relevance_score) can't leak if the SELECT grows.
       return {
-        ...row,
+        program_title: row.program_title,
+        cip_code: row.cip_code,
+        credential_title: row.credential_title,
+        credential_level: row.credential_level,
+        school_type: row.school_type,
+        school_name: row.school_name,
+        city: row.city,
+        state: row.state,
+        school_url: row.school_url,
+        is_active: row.is_active,
+        accreditor: row.accreditor,
         unitid: safeNum(row.unitid),
         admission_rate: safeNum(row.admission_rate),
         school_min_range: safeNum(row.school_min_range),
