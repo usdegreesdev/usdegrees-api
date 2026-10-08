@@ -1,4 +1,5 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { sendError } from "../utils/apiError";
 
 /**
  * Auth endpoints (login / token exchange) have no other abuse control —
@@ -9,7 +10,7 @@ export const authRateLimit = rateLimit({
   limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many attempts. Please try again later." },
+  handler: (req, res) => sendError(req, res, 429, "RATE_LIMITED"),
 });
 
 /**

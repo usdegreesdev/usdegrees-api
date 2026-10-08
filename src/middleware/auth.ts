@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import pool from "../db/client";
 import { AuthRequest } from "../types/user";
 import { JWT_SECRET as SECRET } from "../config/jwt";
+import { sendError, sendInternalError, tokenFailureCode } from "../utils/apiError";
 
 interface AppJwtPayload {
   sub: string; // Firebase UID
@@ -27,7 +28,7 @@ export const verifyToken = async (
   const authHeader = req.headers["authorization"];
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Missing or invalid Authorization header" });
+    sendError(req, res, 401, "AUTH_TOKEN_MISSING");
     return;
   }
 
@@ -42,14 +43,14 @@ export const verifyToken = async (
     console.warn(
       `[verifyToken] 401 — jwt.verify failed: ${(err as Error).name}: ${(err as Error).message}`,
     );
-    res.status(401).json({ error: "Invalid or expired token" });
+    sendError(req, res, 401, tokenFailureCode(err));
     return;
   }
 
   const uid = payload.sub;
   if (!uid) {
     console.warn("[verifyToken] 401 — token has no sub claim");
-    res.status(401).json({ error: "Invalid token payload" });
+    sendError(req, res, 401, "AUTH_TOKEN_INVALID");
     return;
   }
 
@@ -63,26 +64,21 @@ export const verifyToken = async (
       console.warn(
         `[verifyToken] 403 — no usdusers row for firebase_uid=${uid}`,
       );
-      res
-        .status(403)
-        .json({ error: "Account is inactive or no longer exists" });
+      sendError(req, res, 403, "AUTH_USER_DISABLED");
       return;
     }
     if (result.rows[0].is_active === false) {
       console.warn(
         `[verifyToken] 403 — account inactive for firebase_uid=${uid}`,
       );
-      res
-        .status(403)
-        .json({ error: "Account is inactive or no longer exists" });
+      sendError(req, res, 403, "AUTH_USER_DISABLED");
       return;
     }
 
     req.userId = uid;
     next();
   } catch (err) {
-    console.error("Auth middleware DB error:", (err as Error).message);
-    res.status(500).json({ error: "Authentication check failed" });
+    sendInternalError(req, res, err, "verifyToken");
   }
 };
 

@@ -5,7 +5,7 @@ import { verifyToken } from "../middleware/auth";
 import { normalizeDegreeLevel } from "../constants/degreeLevels";
 import { getValidStateCodes } from "../db/statesCache";
 import { ApiError, AuthRequest } from "../types/user";
-import { errorDetails } from "../utils/errors";
+import { sendError, sendInternalError } from "../utils/apiError";
 import {
   REACTIVATION_COOLDOWN_HOURS,
   cooldownEligibleAt,
@@ -141,15 +141,11 @@ router.get("/", verifyToken, async (req: AuthRequest, res: Response) => {
   try {
     const profile = await buildProfileResponse(req.userId as string);
     if (!profile) {
-      return res.status(404).json({ error: "User not found" });
+      return sendError(req, res, 403, "AUTH_USER_DISABLED");
     }
     res.json(profile);
   } catch (error) {
-    console.error("Get profile error:", error);
-    res.status(500).json({
-      error: "Failed to fetch profile",
-      details: errorDetails(error),
-    });
+    sendInternalError(req, res, error, "get/profile/error");
   }
 });
 
@@ -195,11 +191,15 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
         ) {
           value = value.trim();
         } else {
-          return res.status(400).json({
-            error: `preferredCollegeType must be one of ${COLLEGE_TYPES.join(
+          return sendError(
+            req,
+            res,
+            400,
+            "PROFILE_INVALID",
+            `preferredCollegeType must be one of ${COLLEGE_TYPES.join(
               ", ",
             )}, or empty to clear`,
-          });
+          );
         }
       } else if (column === "sat_score") {
         // A single total SAT score: null clears it; otherwise it must be an
@@ -207,9 +207,13 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
         if (value !== null) {
           const n = typeof value === "string" ? Number(value.trim()) : value;
           if (typeof n !== "number" || !Number.isInteger(n) || n < 400 || n > 1600) {
-            return res.status(400).json({
-              error: "satScore must be an integer between 400 and 1600, or null to clear",
-            });
+            return sendError(
+              req,
+              res,
+              400,
+              "PROFILE_INVALID",
+              "satScore must be an integer between 400 and 1600, or null to clear",
+            );
           }
           value = n;
         }
@@ -228,12 +232,12 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
       "preferredPrograms" in body && body.preferredPrograms !== undefined;
 
     if (sets.length === 0 && !hasStates && !hasPrograms) {
-      return res.status(400).json({ error: "No updatable fields provided" });
+      return sendError(req, res, 400, "PROFILE_INVALID", "No updatable fields provided.");
     }
 
     const userId = await resolveUserId(req.userId as string);
     if (!userId) {
-      return res.status(404).json({ error: "User not found" });
+      return sendError(req, res, 403, "AUTH_USER_DISABLED");
     }
 
     const stateCodes = hasStates
@@ -297,11 +301,7 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
     const profile = await buildProfileResponse(req.userId as string);
     res.json(profile);
   } catch (error) {
-    console.error("Update profile error:", error);
-    res.status(500).json({
-      error: "Failed to update profile",
-      details: errorDetails(error),
-    });
+    sendInternalError(req, res, error, "update/profile/error");
   }
 });
 
@@ -351,7 +351,7 @@ accountRouter.post(
 
       const userRow = updated.rows[0];
       if (!userRow) {
-        return res.status(404).json({ error: "User not found" });
+        return sendError(req, res, 403, "AUTH_USER_DISABLED");
       }
 
       // Record why the user is leaving. reason_label holds the exact text the
@@ -376,11 +376,7 @@ accountRouter.post(
 
       res.json({ ok: true });
     } catch (error) {
-      console.error("Account delete error:", error);
-      res.status(500).json({
-        error: "Failed to delete account",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "account/delete/error");
     }
   },
 );
@@ -404,7 +400,7 @@ accountRouter.get(
         .trim()
         .toLowerCase();
       if (!email) {
-        return res.status(400).json({ error: "email is required" });
+        return sendError(req, res, 400, "PROFILE_INVALID", "email is required.");
       }
 
       const result = await pool.query<{
@@ -434,11 +430,7 @@ accountRouter.get(
 
       return res.json({ available: true });
     } catch (error) {
-      console.error("Account availability error:", error);
-      res.status(500).json({
-        error: "Failed to check account availability",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "account/availability/error");
     }
   },
 );
@@ -481,7 +473,7 @@ accountRouter.patch(
       const uid = req.userId as string;
       const rawNewEmail = (req.body ?? {}).newEmail;
       if (typeof rawNewEmail !== "string" || !rawNewEmail.trim()) {
-        return res.status(400).json({ error: "newEmail is required" });
+        return sendError(req, res, 400, "PROFILE_INVALID", "newEmail is required.");
       }
       const newEmail = rawNewEmail.trim().toLowerCase();
 
@@ -495,13 +487,17 @@ accountRouter.patch(
       );
       const caller = callerResult.rows[0];
       if (!caller) {
-        return res.status(404).json({ error: "User not found" });
+        return sendError(req, res, 403, "AUTH_USER_DISABLED");
       }
 
       if (newEmail === caller.email.toLowerCase()) {
-        return res
-          .status(400)
-          .json({ error: "New email must be different from your current email" });
+        return sendError(
+          req,
+          res,
+          400,
+          "PROFILE_INVALID",
+          "New email must be different from your current email.",
+        );
       }
 
       // Any OTHER row already holding this email — verified, unverified, or
@@ -518,9 +514,7 @@ accountRouter.patch(
       if (!decision.allowed) {
         const status =
           decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403;
-        return res
-          .status(status)
-          .json({ error: decision.code, details: decision.message });
+        return sendError(req, res, status, decision.code, decision.message);
       }
 
       const client = await pool.connect();
@@ -552,7 +546,7 @@ accountRouter.patch(
 
         if (updated.rows.length === 0) {
           await client.query("ROLLBACK");
-          return res.status(404).json({ error: "User not found" });
+          return sendError(req, res, 403, "AUTH_USER_DISABLED");
         }
 
         // Mirror onto the Firebase user BEFORE committing the DB row, and
@@ -579,10 +573,13 @@ accountRouter.patch(
               ? firebaseErr.message
               : String(firebaseErr),
           );
-          return res.status(500).json({
-            error:
-              "Could not update your sign-in email. Please try again or contact support.",
-          });
+          return sendError(
+            req,
+            res,
+            500,
+            "INTERNAL_ERROR",
+            "Could not update your sign-in email. Please try again or contact support.",
+          );
         }
 
         await client.query("COMMIT");
@@ -592,21 +589,14 @@ accountRouter.patch(
         await client.query("ROLLBACK");
         const pgErr = txErr as { code?: string; constraint?: string };
         if (pgErr.code === "23505" && pgErr.constraint === "usdusers_email_key") {
-          return res.status(409).json({
-            error: "EMAIL_ALREADY_IN_USE",
-            details: "This email address is already associated with another account.",
-          });
+          return sendError(req, res, 409, "EMAIL_ALREADY_IN_USE");
         }
         throw txErr;
       } finally {
         client.release();
       }
     } catch (error) {
-      console.error("Change email error:", error);
-      res.status(500).json({
-        error: "Failed to change email",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "change/email/error");
     }
   },
 );
@@ -638,7 +628,7 @@ accountRouter.get(
         .trim()
         .toLowerCase();
       if (!email) {
-        return res.status(400).json({ error: "email is required" });
+        return sendError(req, res, 400, "PROFILE_INVALID", "email is required.");
       }
 
       const callerResult = await pool.query<{ email_verified: boolean }>(
@@ -647,7 +637,7 @@ accountRouter.get(
       );
       const caller = callerResult.rows[0];
       if (!caller) {
-        return res.status(404).json({ error: "User not found" });
+        return sendError(req, res, 403, "AUTH_USER_DISABLED");
       }
 
       const existingOwner = await findConflictingEmailOwner(pool, email, uid);
@@ -665,11 +655,7 @@ accountRouter.get(
       }
       return res.json({ available: true });
     } catch (error) {
-      console.error("Email availability check error:", error);
-      res.status(500).json({
-        error: "Failed to check email availability",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "email/availability/check/error");
     }
   },
 );

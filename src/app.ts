@@ -5,12 +5,17 @@ import morgan from 'morgan'
 
 import path from 'path'
 import { clientIp } from './middleware/clientIp'
+import { requestId } from './middleware/requestId'
+import { sendError } from './utils/apiError'
 
 export const app = express()
 
 // Render (and most PaaS) sits behind N proxy hops; req.ip must come from the
 // right X-Forwarded-For entry or IP rate limits key on the proxy's address.
 app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1))
+
+// First middleware: every log line and error body can carry the request id.
+app.use(requestId)
 
 // Strips sensitive query params (e.g. the report-download `token`) before a
 // URL is written anywhere — request logs, morgan, etc. — so a signed
@@ -58,7 +63,7 @@ app.use(cors({
 app.use((err: Error & { status?: number }, req: Request, res: Response, next: NextFunction) => {
   if (err.message === CORS_REJECTION_MESSAGE) {
     console.warn(`[cors] blocked origin=${req.headers.origin ?? "(none)"}`);
-    return res.status(err.status ?? 403).json({ error: "Forbidden" });
+    return sendError(req, res, err.status ?? 403, "FORBIDDEN");
   }
   next(err);
 })

@@ -30,6 +30,7 @@ import popularCategoriesRoute from "./routes/popularCategories";
 import analyticsRoute from "./routes/analytics";
 import sitemapRoute from "./routes/sitemap";
 import catalogRoute from "./routes/catalog";
+import { errorHandler } from "./middleware/errorHandler";
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
 
@@ -61,6 +62,9 @@ app.use("/catalog", catalogRoute);
 app.get("/", (req, res) =>
   res.json({ status: "ok", message: "API is running" }),
 );
+// Must stay after every route: turns any thrown/unhandled error into the safe
+// { error: { code, message }, requestId } body.
+app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`API running on http://localhost:${PORT}`);
 });

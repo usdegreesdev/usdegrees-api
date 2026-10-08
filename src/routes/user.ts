@@ -3,7 +3,7 @@ import pool from "../db/client";
 import { User, UserProfile, UpsertUserBody, ApiError, AuthRequest } from "../types/user";
 import { verifyToken } from "../middleware/auth";
 import { firebaseAuth } from "../config/firebase";
-import { errorDetails } from "../utils/errors";
+import { sendError, sendInternalError, tokenFailureCode } from "../utils/apiError";
 import {
   decideEmailChange,
   findConflictingEmailOwner,
@@ -26,7 +26,7 @@ router.get("/:id", verifyToken, async (req: AuthRequest & Request<{ id: string }
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) {
-      return res.status(400).json({ error: "Invalid user ID" });
+      return sendError(req, res, 400, "PROFILE_INVALID", "Invalid user ID.");
     }
 
     const result = await pool.query<User>(
@@ -36,7 +36,7 @@ router.get("/:id", verifyToken, async (req: AuthRequest & Request<{ id: string }
     );
 
     if (result.rows.length === 0 || result.rows[0].firebase_uid !== req.userId) {
-      return res.status(404).json({ error: "User not found" });
+      return sendError(req, res, 404, "NOT_FOUND");
     }
 
     const row = result.rows[0];
@@ -50,11 +50,7 @@ router.get("/:id", verifyToken, async (req: AuthRequest & Request<{ id: string }
       age_consent: row.age_consent,
     });
   } catch (error) {
-    console.error("Error fetching user:", error);
-    res.status(500).json({
-      error: "Failed to fetch user",
-      details: errorDetails(error),
-    });
+    sendInternalError(req, res, error, "error/fetching/user");
   }
 });
 
@@ -75,7 +71,7 @@ router.get("/email/:email", verifyToken, async (req: AuthRequest & Request<{ ema
     );
 
     if (result.rows.length === 0 || result.rows[0].firebase_uid !== req.userId) {
-      return res.status(404).json({ error: "User not found" });
+      return sendError(req, res, 404, "NOT_FOUND");
     }
 
     const row = result.rows[0];
@@ -89,11 +85,7 @@ router.get("/email/:email", verifyToken, async (req: AuthRequest & Request<{ ema
       age_consent: row.age_consent,
     });
   } catch (error) {
-    console.error("Error fetching user by email:", error);
-    res.status(500).json({
-      error: "Failed to fetch user",
-      details: errorDetails(error),
-    });
+    sendInternalError(req, res, error, "error/fetching/user/by/email");
   }
 });
 
@@ -118,15 +110,15 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
   try {
     const authHeader = req.headers["authorization"];
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Missing or invalid Authorization header" });
+      return sendError(req, res, 401, "AUTH_TOKEN_MISSING");
     }
     const idToken = authHeader.split(" ")[1];
 
     let decoded;
     try {
       decoded = await firebaseAuth.verifyIdToken(idToken, true);
-    } catch {
-      return res.status(401).json({ error: "Invalid or revoked Firebase token" });
+    } catch (verifyErr) {
+      return sendError(req, res, 401, tokenFailureCode(verifyErr));
     }
 
     const uid = decoded.uid;
@@ -177,7 +169,7 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
     }
 
     if (existing && existing.is_active === false) {
-      return res.status(403).json({ error: "This account has been deleted" });
+      return sendError(req, res, 403, "AUTH_USER_DISABLED");
     }
 
     // 3. Conflict + cooldown check whenever the target email isn't already
@@ -192,10 +184,13 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
       });
 
       if (!decision.allowed) {
-        return res.status(decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403).json({
-          error: decision.code,
-          details: decision.message,
-        });
+        return sendError(
+          req,
+          res,
+          decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403,
+          decision.code,
+          decision.message,
+        );
       }
 
       if (decision.releaseFromUserId) {
@@ -265,10 +260,13 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
         console.error(
           `[POST /user] 409 — race on ${pgErr.constraint} for uid=${uid}, email="${email}"`,
         );
-        return res.status(409).json({
-          error: "EMAIL_ALREADY_IN_USE",
-          details: "This email address is already associated with a different account. Please try again.",
-        });
+        return sendError(
+          req,
+          res,
+          409,
+          "EMAIL_ALREADY_IN_USE",
+          "This email address is already associated with a different account. Please try again.",
+        );
       }
       throw err;
     }
@@ -284,11 +282,7 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
       age_consent: row.age_consent,
     });
   } catch (error) {
-    console.error("Error upserting user:", error);
-    res.status(500).json({
-      error: "Failed to save user",
-      details: errorDetails(error),
-    });
+    sendInternalError(req, res, error, "error/upserting/user");
   }
 });
 

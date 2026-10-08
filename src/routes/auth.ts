@@ -9,7 +9,7 @@ import { User, UserProfile, ApiError, AuthRequest } from "../types/user";
 
 import { JWT_SECRET as SECRET } from "../config/jwt";
 import { authRateLimit } from "../middleware/rateLimit";
-import { errorDetails } from "../utils/errors";
+import { sendError, sendInternalError, tokenFailureCode } from "../utils/apiError";
 import {
   decideEmailChange,
   findConflictingEmailOwner,
@@ -91,7 +91,7 @@ router.post(
   authRateLimit,
   async (
     req: Request<{}, { token: string } | ApiError, { idToken?: string }>,
-    res: Response<{ token: string } | ApiError>,
+    res: Response,
   ) => {
     console.log("[auth/login] hit", {
       hasIdToken: !!req.body?.idToken,
@@ -103,7 +103,7 @@ router.post(
 
       if (!idToken) {
         console.warn("[auth/login] 400 — missing idToken in body");
-        return res.status(400).json({ error: "idToken is required" });
+        return sendError(req, res, 400, "AUTH_TOKEN_MISSING");
       }
 
       // Verify the Firebase token with the revoked-check enabled.
@@ -116,9 +116,7 @@ router.post(
         console.warn(
           `[auth/login] 401 — verifyIdToken failed (code=${code}): ${message}`,
         );
-        return res
-          .status(401)
-          .json({ error: "Invalid or revoked Firebase token" });
+        return sendError(req, res, 401, tokenFailureCode(err));
       }
 
       console.log(`[auth/login] token verified for uid=${decoded.uid}`);
@@ -175,7 +173,7 @@ router.post(
 
       // 3. Reject soft-deleted accounts.
       if (user && user.is_active === false) {
-        return res.status(403).json({ error: "This account has been deleted" });
+        return sendError(req, res, 403, "AUTH_USER_DISABLED");
       }
 
       // 4. Detect a target email this row doesn't already legitimately own —
@@ -204,10 +202,13 @@ router.post(
           console.warn(
             `[auth/login] blocked — uid=${uid} tried to claim email="${emailValue}": ${decision.code}`,
           );
-          return res.status(decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403).json({
-            error: decision.code,
-            details: decision.message,
-          });
+          return sendError(
+            req,
+            res,
+            decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403,
+            decision.code,
+            decision.message,
+          );
         }
 
         if (decision.releaseFromUserId) {
@@ -257,11 +258,13 @@ router.post(
           console.error(
             `[auth/login] 409 — email collision racing uid=${uid} for email="${emailValue}"`,
           );
-          return res.status(409).json({
-            error: "EMAIL_ALREADY_IN_USE",
-            details:
-              "This email address is already associated with a different account. Please contact support to resolve this before signing in again.",
-          });
+          return sendError(
+            req,
+            res,
+            409,
+            "EMAIL_ALREADY_IN_USE",
+            "This email address is already associated with a different account. Please contact support to resolve this before signing in again.",
+          );
         }
         throw err;
       }
@@ -270,11 +273,7 @@ router.post(
       console.log(`[auth/login] 200 — app JWT issued for uid=${uid}`);
       return res.json({ token });
     } catch (error) {
-      console.error("[auth/login] 500 — unexpected error:", error);
-      return res.status(500).json({
-        error: "Login failed",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "auth/login", "AUTH_EXCHANGE_FAILED");
     }
   },
 );
@@ -318,14 +317,12 @@ router.post(
       const idToken = req.body?.id_token;
 
       if (!idToken) {
-        return res.status(400).json({ error: "id_token is required" });
+        return sendError(req, res, 400, "AUTH_TOKEN_MISSING");
       }
 
       if (!APPLE_CLIENT_ID) {
-        console.error("[auth/apple] 500 — APPLE_CLIENT_ID is not configured");
-        return res
-          .status(500)
-          .json({ error: "Apple sign-in is not configured" });
+        console.error(`[auth/apple] requestId=${req.requestId} APPLE_CLIENT_ID is not configured`);
+        return sendError(req, res, 500, "AUTH_EXCHANGE_FAILED");
       }
 
       let payload: JWTPayload;
@@ -337,14 +334,12 @@ router.post(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[auth/apple] 401 — jwtVerify failed: ${message}`);
-        return res
-          .status(401)
-          .json({ error: "Invalid or expired Apple token" });
+        return sendError(req, res, 401, tokenFailureCode(err));
       }
 
       const sub = payload.sub;
       if (!sub) {
-        return res.status(401).json({ error: "Invalid Apple token payload" });
+        return sendError(req, res, 401, "AUTH_TOKEN_INVALID");
       }
 
       // Firebase custom-token uids must be <=128 chars (enforced client-side
@@ -356,7 +351,7 @@ router.post(
         console.error(
           `[auth/apple] 400 — Apple sub too long for Firebase uid (len=${sub.length})`,
         );
-        return res.status(400).json({ error: "Invalid Apple token payload" });
+        return sendError(req, res, 400, "AUTH_TOKEN_INVALID");
       }
 
       const email = typeof payload.email === "string" ? payload.email : null;
@@ -416,7 +411,7 @@ router.post(
       }
 
       if (user && user.is_active === false) {
-        return res.status(403).json({ error: "This account has been deleted" });
+        return sendError(req, res, 403, "AUTH_USER_DISABLED");
       }
 
       // 3. Same conflict + cooldown check /auth/login runs before ever
@@ -439,9 +434,13 @@ router.post(
           console.warn(
             `[auth/apple] blocked — sub=${sub} tried to claim email="${emailValue}": ${decision.code}`,
           );
-          return res
-            .status(decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403)
-            .json({ error: decision.code, details: decision.message });
+          return sendError(
+            req,
+            res,
+            decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403,
+            decision.code,
+            decision.message,
+          );
         }
 
         if (decision.releaseFromUserId) {
@@ -481,11 +480,13 @@ router.post(
           console.error(
             `[auth/apple] 409 — email collision racing sub=${sub} for email="${emailValue}"`,
           );
-          return res.status(409).json({
-            error: "EMAIL_ALREADY_IN_USE",
-            details:
-              "This email address is already associated with a different account. Please contact support to resolve this before signing in again.",
-          });
+          return sendError(
+            req,
+            res,
+            409,
+            "EMAIL_ALREADY_IN_USE",
+            "This email address is already associated with a different account. Please contact support to resolve this before signing in again.",
+          );
         }
         throw err;
       }
@@ -504,23 +505,12 @@ router.post(
       try {
         firebaseToken = await firebaseAuth.createCustomToken(appleUid);
       } catch (err) {
-        console.error(
-          "[auth/apple] 500 — createCustomToken failed:",
-          err instanceof Error ? err.message : String(err),
-        );
-        return res.status(500).json({
-          error: "Apple sign-in failed",
-          details: errorDetails(err),
-        });
+        return sendInternalError(req, res, err, "auth/apple createCustomToken", "AUTH_EXCHANGE_FAILED");
       }
 
       return res.json({ token, firebaseToken, user: toProfile(user) });
     } catch (error) {
-      console.error("[auth/apple] 500 — unexpected error:", error);
-      return res.status(500).json({
-        error: "Apple sign-in failed",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "auth/apple", "AUTH_EXCHANGE_FAILED");
     }
   },
 );
@@ -541,16 +531,12 @@ router.get(
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ error: "User not found" });
+        return sendError(req, res, 403, "AUTH_USER_DISABLED");
       }
 
       res.json(toProfile(result.rows[0]));
     } catch (error) {
-      console.error("Fetch me error:", error);
-      res.status(500).json({
-        error: "Failed to retrieve user profile",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "auth/me");
     }
   },
 );
