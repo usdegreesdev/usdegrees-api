@@ -85,3 +85,43 @@ export const verifyToken = async (
     res.status(500).json({ error: "Authentication check failed" });
   }
 };
+
+/**
+ * Optional-auth middleware for public routes that serve a richer tier to
+ * signed-in users (higher page-size cap, per-user rate limit).
+ *
+ * Same JWT + is_active checks as verifyToken, but every failure — missing
+ * header, bad/expired token, unknown or inactive account, DB error — leaves
+ * the request anonymous (req.userId unset) instead of responding 401/403/500.
+ * Failing down to the anonymous tier never grants more access.
+ */
+export const optionalAuth = async (
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    next();
+    return;
+  }
+
+  try {
+    const payload = jwt.verify(authHeader.split(" ")[1], SECRET, {
+      algorithms: ["HS256"],
+    }) as AppJwtPayload;
+    const uid = payload.sub;
+    if (uid) {
+      const result = await pool.query<{ is_active: boolean }>(
+        "SELECT is_active FROM usdusers WHERE firebase_uid = $1",
+        [uid],
+      );
+      if (result.rows.length > 0 && result.rows[0].is_active !== false) {
+        req.userId = uid;
+      }
+    }
+  } catch {
+    // Invalid/expired token or DB error → stay anonymous.
+  }
+  next();
+};

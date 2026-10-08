@@ -5,7 +5,7 @@ dns.setDefaultResultOrder("ipv4first");
 // import jwt from "jsonwebtoken";
 import { app } from "./app";
 
-// import { verifyToken } from "./middleware/auth";
+import { verifyToken } from "./middleware/auth";
 import statesRoute from "./routes/states";
 import credentialsRoute from "./routes/credentials";
 import coursesRoute from "./routes/courses";
@@ -28,6 +28,7 @@ import reportRoute from "./routes/report";
 import athleticsRoute from "./routes/athletics";
 import popularCategoriesRoute from "./routes/popularCategories";
 import analyticsRoute from "./routes/analytics";
+import sitemapRoute from "./routes/sitemap";
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
 
@@ -54,6 +55,7 @@ app.use("/report", reportRoute);
 app.use("/athletics", athleticsRoute);
 app.use("/popular-categories", popularCategoriesRoute);
 app.use("/analytics", analyticsRoute);
+app.use("/sitemap", sitemapRoute);
 app.get("/", (req, res) =>
   res.json({ status: "ok", message: "API is running" }),
 );

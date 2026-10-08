@@ -4,8 +4,13 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 
 import path from 'path'
+import { clientIp } from './middleware/clientIp'
 
 export const app = express()
+
+// Render (and most PaaS) sits behind N proxy hops; req.ip must come from the
+// right X-Forwarded-For entry or IP rate limits key on the proxy's address.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1))
 
 // Strips sensitive query params (e.g. the report-download `token`) before a
 // URL is written anywhere — request logs, morgan, etc. — so a signed
@@ -61,6 +66,7 @@ app.use((err: Error & { status?: number }, req: Request, res: Response, next: Ne
 morgan.token("redacted-url", (req: Request) => redactSensitiveQueryParams(req.originalUrl || req.url))
 app.use(morgan(':method :redacted-url :status :res[content-length] - :response-time ms'))
 app.use(express.json())
+app.use(clientIp)
 
 app.use("/public", express.static(path.join(__dirname, "../public")));
 
