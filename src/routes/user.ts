@@ -3,7 +3,12 @@ import pool from "../db/client";
 import { User, UserProfile, UpsertUserBody, ApiError, AuthRequest } from "../types/user";
 import { verifyToken } from "../middleware/auth";
 import { firebaseAuth } from "../config/firebase";
-import { sendError, sendInternalError, tokenFailureCode } from "../utils/apiError";
+import {
+  sendEmailChangeRejection,
+  sendError,
+  sendInternalError,
+  tokenFailureCode,
+} from "../utils/apiError";
 import {
   decideEmailChange,
   findConflictingEmailOwner,
@@ -184,13 +189,7 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
       });
 
       if (!decision.allowed) {
-        return sendError(
-          req,
-          res,
-          decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403,
-          decision.code,
-          decision.message,
-        );
+        return sendEmailChangeRejection(req, res, decision);
       }
 
       if (decision.releaseFromUserId) {

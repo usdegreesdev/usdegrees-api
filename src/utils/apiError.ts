@@ -47,7 +47,7 @@ const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
 };
 
 export interface ApiErrorBody {
-  error: { code: ErrorCode; message: string };
+  error: { code: ErrorCode; message: string; eligibleAt?: string };
   requestId: string;
   /** Only ever present when NODE_ENV === "development". */
   debug?: { name?: string; message?: string };
@@ -63,11 +63,13 @@ export function errorBody(
   code: ErrorCode,
   message?: string,
   cause?: unknown,
+  extra?: { eligibleAt?: string },
 ): ApiErrorBody {
   const body: ApiErrorBody = {
     error: { code, message: message ?? DEFAULT_MESSAGES[code] },
     requestId: req.requestId ?? "unknown",
   };
+  if (extra?.eligibleAt) body.error.eligibleAt = extra.eligibleAt;
   if (cause !== undefined && debugEnabled()) {
     body.debug =
       cause instanceof Error
@@ -89,6 +91,21 @@ export function sendError(
   message?: string,
 ): void {
   res.status(status).json(errorBody(req, code, message));
+}
+
+/**
+ * Sends a rejected decideEmailChange() decision: 409 for EMAIL_ALREADY_IN_USE,
+ * 403 otherwise. EMAIL_IN_COOLDOWN carries `error.eligibleAt` (ISO 8601 UTC,
+ * same format as GET /account/availability) instead of a date in the message.
+ */
+export function sendEmailChangeRejection(
+  req: Request,
+  res: Response,
+  decision: { code: ErrorCode; message: string; eligibleAt?: string },
+): void {
+  res
+    .status(decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403)
+    .json(errorBody(req, decision.code, decision.message, undefined, { eligibleAt: decision.eligibleAt }));
 }
 
 /**

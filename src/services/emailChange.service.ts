@@ -11,7 +11,13 @@ export type EmailChangeRejectionCode =
 
 export type EmailChangeDecision =
   | { allowed: true; releaseFromUserId?: number }
-  | { allowed: false; code: EmailChangeRejectionCode; message: string };
+  | {
+      allowed: false;
+      code: EmailChangeRejectionCode;
+      message: string;
+      /** ISO 8601 UTC; only set for EMAIL_IN_COOLDOWN. */
+      eligibleAt?: string;
+    };
 
 export interface ExistingEmailOwner {
   id: number;
@@ -53,9 +59,9 @@ export function decideEmailChange(params: {
       return {
         allowed: false,
         code: "EMAIL_IN_COOLDOWN",
-        message: `This email was recently deleted and is still in its cooldown period. Try again after ${new Date(
-          cooldownEligibleAt(owner.deactivatedAt),
-        ).toISOString()}.`,
+        message:
+          "This email was recently deleted and is still in its cooldown period. Please try again later.",
+        eligibleAt: new Date(cooldownEligibleAt(owner.deactivatedAt)).toISOString(),
       };
     }
     // Cooldown elapsed: the deactivated row still holds the email column

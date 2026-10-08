@@ -9,7 +9,12 @@ import { User, UserProfile, ApiError, AuthRequest } from "../types/user";
 
 import { JWT_SECRET as SECRET } from "../config/jwt";
 import { authRateLimit } from "../middleware/rateLimit";
-import { sendError, sendInternalError, tokenFailureCode } from "../utils/apiError";
+import {
+  sendEmailChangeRejection,
+  sendError,
+  sendInternalError,
+  tokenFailureCode,
+} from "../utils/apiError";
 import {
   decideEmailChange,
   findConflictingEmailOwner,
@@ -202,13 +207,7 @@ router.post(
           console.warn(
             `[auth/login] blocked — uid=${uid} tried to claim email="${emailValue}": ${decision.code}`,
           );
-          return sendError(
-            req,
-            res,
-            decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403,
-            decision.code,
-            decision.message,
-          );
+          return sendEmailChangeRejection(req, res, decision);
         }
 
         if (decision.releaseFromUserId) {
@@ -434,13 +433,7 @@ router.post(
           console.warn(
             `[auth/apple] blocked — sub=${sub} tried to claim email="${emailValue}": ${decision.code}`,
           );
-          return sendError(
-            req,
-            res,
-            decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403,
-            decision.code,
-            decision.message,
-          );
+          return sendEmailChangeRejection(req, res, decision);
         }
 
         if (decision.releaseFromUserId) {

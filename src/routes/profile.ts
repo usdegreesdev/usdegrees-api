@@ -5,7 +5,7 @@ import { verifyToken } from "../middleware/auth";
 import { normalizeDegreeLevel } from "../constants/degreeLevels";
 import { getValidStateCodes } from "../db/statesCache";
 import { ApiError, AuthRequest } from "../types/user";
-import { sendError, sendInternalError } from "../utils/apiError";
+import { sendEmailChangeRejection, sendError, sendInternalError } from "../utils/apiError";
 import {
   REACTIVATION_COOLDOWN_HOURS,
   cooldownEligibleAt,
@@ -512,9 +512,7 @@ accountRouter.patch(
       });
 
       if (!decision.allowed) {
-        const status =
-          decision.code === "EMAIL_ALREADY_IN_USE" ? 409 : 403;
-        return sendError(req, res, status, decision.code, decision.message);
+        return sendEmailChangeRejection(req, res, decision);
       }
 
       const client = await pool.connect();
@@ -618,7 +616,7 @@ accountRouter.get(
     req: AuthRequest,
     res: Response<
       | { available: true }
-      | { available: false; code: string; details: string }
+      | { available: false; code: string; details: string; eligibleAt?: string }
       | ApiError
     >,
   ) => {
@@ -651,6 +649,7 @@ accountRouter.get(
           available: false,
           code: decision.code,
           details: decision.message,
+          ...(decision.eligibleAt ? { eligibleAt: decision.eligibleAt } : {}),
         });
       }
       return res.json({ available: true });
