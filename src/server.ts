@@ -29,6 +29,7 @@ import athleticsRoute from "./routes/athletics";
 import popularCategoriesRoute from "./routes/popularCategories";
 import analyticsRoute from "./routes/analytics";
 import sitemapRoute from "./routes/sitemap";
+import catalogRoute from "./routes/catalog";
 const PORT = process.env.PORT || 8000;
 console.log("SERVER.TS EXECUTED");
 
@@ -56,6 +57,7 @@ app.use("/athletics", athleticsRoute);
 app.use("/popular-categories", popularCategoriesRoute);
 app.use("/analytics", analyticsRoute);
 app.use("/sitemap", sitemapRoute);
+app.use("/catalog", catalogRoute);
 app.get("/", (req, res) =>
   res.json({ status: "ok", message: "API is running" }),
 );

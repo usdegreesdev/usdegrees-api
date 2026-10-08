@@ -75,3 +75,38 @@ export const catalogGuard: RequestHandler[] = [
   catalogRateLimit,
   catalogCacheHeaders,
 ];
+
+export const MAX_MULTI_VALUES = 10;
+
+export type MultiValueResult =
+  | { ok: true; values: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Parses a comma-separated filter (e.g. state=MA,NY). Absent/empty -> no
+ * values (no filter). More than MAX_MULTI_VALUES, or a repeated query param
+ * (array/object), -> error. A single value parses to a one-element list.
+ */
+export function parseMultiValue(raw: unknown, name: string): MultiValueResult {
+  if (raw === undefined) return { ok: true, values: [] };
+  if (typeof raw !== "string") return { ok: false, error: `${name} must be a single comma-separated value` };
+  const values = [...new Set(raw.split(",").map((v) => v.trim()).filter(Boolean))];
+  if (values.length > MAX_MULTI_VALUES) {
+    return { ok: false, error: `${name} accepts at most ${MAX_MULTI_VALUES} values` };
+  }
+  return { ok: true, values };
+}
+
+/** Appends `AND col = $n` / `AND col IN ($n,...)` and pushes the params. */
+export function appendInFilter(
+  column: string,
+  values: string[],
+  params: (string | number)[],
+): string {
+  if (values.length === 0) return "";
+  const idx = values.map((v) => {
+    params.push(v);
+    return `$${params.length}`;
+  });
+  return values.length === 1 ? ` AND ${column} = ${idx[0]}` : ` AND ${column} IN (${idx.join(", ")})`;
+}

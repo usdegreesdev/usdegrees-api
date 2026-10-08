@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { SearchQueryParams, SearchResult } from "../types/search-details";
 import { normalizeEarningsFillMethod } from "../types/earnings";
-import { catalogGuard, parseCatalogPaging } from "../utils/catalogPaging";
+import { appendInFilter, catalogGuard, parseCatalogPaging, parseMultiValue } from "../utils/catalogPaging";
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -47,19 +47,23 @@ router.get("/", ...catalogGuard, async (req: Request, res: Response) => {
     res.status(400).json({ error: paging.error });
     return;
   }
-  const { credential_title, state, title } = req.query as SearchQueryParams;
+  const { title } = req.query as SearchQueryParams;
+  // state / credential_title accept comma-separated lists (max 10 each);
+  // a single value behaves exactly as before (`= $n`).
+  const credentialTitles = parseMultiValue(req.query.credential_title, "credential_title");
+  const states = parseMultiValue(req.query.state, "state");
+  if (!credentialTitles.ok) {
+    res.status(400).json({ error: credentialTitles.error });
+    return;
+  }
+  if (!states.ok) {
+    res.status(400).json({ error: states.error });
+    return;
+  }
   const params: (string | number)[] = [];
   let whereSql = "";
-
-  if (credential_title) {
-    params.push(credential_title);
-    whereSql += ` AND p.credential_title = $${params.length}`;
-  }
-
-  if (state) {
-    params.push(state);
-    whereSql += ` AND s.state = $${params.length}`;
-  }
+  whereSql += appendInFilter("p.credential_title", credentialTitles.values, params);
+  whereSql += appendInFilter("s.state", states.values, params);
 
   // How many leading entries of `params` are actually referenced by
   // `whereSql` — the title-match block below pushes extra params afterward
