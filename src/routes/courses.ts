@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { Course } from "../types/search-details";
 import pool from "../db/client";
+import { sendInternalError } from "../utils/apiError";
 
 
 const router = Router();
@@ -42,14 +43,7 @@ router.get("/", async (req: Request, res: Response) => {
   console.error("SQL:", sql);
   console.error("PARAMS:", params);
 
-  res.status(500).json({
-    error: "Internal server error",
-    details: err?.message || String(err),
-    code: err?.code,
-    stack: process.env.NODE_ENV !== "production"
-      ? err?.stack
-      : undefined
-  });
+  sendInternalError(req, res, err, "courses");
 }
 });
 

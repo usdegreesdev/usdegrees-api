@@ -27,12 +27,12 @@ import pool from "../db/client";
 import { College, CollegesResponse, ApiError } from "../types/colleges";
 import { getAthleticsProfile } from "../services/athletics.service";
 import { AthleticsProfile } from "../types/athletics";
-import { errorDetails } from "../utils/errors";
 import {
   CATALOG_CAPS,
   catalogGuard,
   parseCatalogPaging,
 } from "../utils/catalogPaging";
+import { sendInternalError } from "../utils/apiError";
 
 const router = Router();
 
@@ -145,11 +145,7 @@ router.get(
         hasMore,
       });
     } catch (error) {
-      console.error("Error fetching colleges:", error);
-      res.status(500).json({
-        error: "Failed to fetch colleges",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "colleges");
     }
   },
 );
@@ -230,11 +226,7 @@ router.get(
 
       res.json(colleges);
     } catch (error) {
-      console.error("Error searching colleges:", error);
-      res.status(500).json({
-        error: "Failed to search colleges",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "colleges");
     }
   },
 );
@@ -294,11 +286,7 @@ router.get(
 
       res.json(college);
     } catch (error) {
-      console.error("Error fetching college:", error);
-      res.status(500).json({
-        error: "Failed to fetch college",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "colleges");
     }
   },
 );
@@ -337,11 +325,7 @@ router.get(
 
       res.json(profile);
     } catch (error) {
-      console.error("Error fetching athletics profile:", error);
-      res.status(500).json({
-        error: "Failed to fetch athletics profile",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "colleges");
     }
   },
 );

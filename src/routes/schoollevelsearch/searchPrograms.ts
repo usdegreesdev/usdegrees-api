@@ -8,6 +8,7 @@ import { Router, Request, Response } from "express";
 import pool from "../../db/client";
 import { ProgramSearchRow, ProgramSearchResponse } from "../../types/schoolPrograms";
 import { normalizeEarningsFillMethod } from "../../types/earnings";
+import { sendInternalError } from "../../utils/apiError";
 
 const router = Router({ mergeParams: true });
 
@@ -133,8 +134,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     return res.json(response);
   } catch (err) {
-    console.error("[searchPrograms] Error:", (err as Error).message);
-    return res.status(500).json({ error: "Internal server error" });
+    return sendInternalError(req, res, err, "searchPrograms");
   }
 });
 

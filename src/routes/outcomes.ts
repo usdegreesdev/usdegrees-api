@@ -3,6 +3,7 @@ import pool from "../db/client";
 import { OutcomesRow, OutcomesResponse } from "../types/outcomes";
 import { normalizeEarningsFillMethod } from "../types/earnings";
 import { getEarningsForProgram } from "../services/earnings.service";
+import { sendError, sendInternalError } from "../utils/apiError";
 
 // ---------------------------------------------------------------------------
 // Helper — safely coerce nullable / non-finite numeric DB values
@@ -131,10 +132,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     const { rows } = await pool.query<OutcomesRow>(sql, params);
 
     if (rows.length === 0) {
-      res.status(404).json({
-        error: "Not found",
-        details: `No outcomes data found for unitid=${unitidNum} and cip_code=${cipCode}.`,
-      });
+      sendError(req, res, 404, "NOT_FOUND");
       return;
     }
 
@@ -183,10 +181,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       `[/outcomes/${unitidNum}/${cipCode}] Query error:`,
       (err as Error).message,
     );
-    res.status(500).json({
-      error: "Internal server error",
-      details: (err as Error).message,
-    });
+    sendInternalError(req, res, err, "outcomes");
   }
 });
 

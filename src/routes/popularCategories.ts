@@ -39,7 +39,7 @@ import {
   CategorySource,
 } from "../services/personalizedCategories.service";
 import { SimpleCache } from "../utils/simpleCache";
-import { errorDetails } from "../utils/errors";
+import { sendInternalError } from "../utils/apiError";
 
 const router = Router();
 
@@ -187,11 +187,7 @@ router.get(
       cache.set(key, categories);
       return res.json({ categories });
     } catch (error) {
-      console.error("Error fetching popular categories:", error);
-      return res.status(500).json({
-        error: "Failed to fetch popular categories",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "popularCategories");
     }
   },
 );
@@ -270,11 +266,7 @@ router.get(
       personalizedCache.set(key, result);
       return res.json({ ...result, showCompletePrompt: false });
     } catch (error) {
-      console.error("Error fetching personalized popular categories:", error);
-      return res.status(500).json({
-        error: "Failed to fetch personalized popular categories",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "popularCategories");
     }
   },
 );

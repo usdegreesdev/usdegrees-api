@@ -6,7 +6,7 @@ import { getAthleticsProfile } from "../services/athletics.service";
 import { AthleticsProfile } from "../types/athletics";
 import { EarningsAvgSalaryResolved } from "../types/earnings";
 import { getEarningsForProgram } from "../services/earnings.service";
-import { errorDetails } from "../utils/errors";
+import { sendInternalError } from "../utils/apiError";
 
 const router = Router();
 
@@ -94,11 +94,7 @@ router.get(
 
       res.json(colleges);
     } catch (error) {
-      console.error("Error fetching compare colleges:", error);
-      res.status(500).json({
-        error: "Failed to fetch colleges",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -597,11 +593,7 @@ router.post(
 
       return res.json(await getSelectedEnriched(userId));
     } catch (error) {
-      console.error("Add compare selection error:", error);
-      return res.status(500).json({
-        error: "Failed to add to comparison",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -625,11 +617,7 @@ router.get(
       const program = toStr(req.query.program) ?? undefined;
       return res.json(await getSelectedEnriched(userId, program));
     } catch (error) {
-      console.error("Get compare selection error:", error);
-      return res.status(500).json({
-        error: "Failed to fetch comparison",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -666,11 +654,7 @@ router.delete(
 
       return res.json({ ok: true });
     } catch (error) {
-      console.error("Remove compare selection error:", error);
-      return res.status(500).json({
-        error: "Failed to remove from comparison",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -734,11 +718,7 @@ router.get(
 
       return res.json(await fetchMatrixEntries(userId));
     } catch (error) {
-      console.error("Get compare matrix error:", error);
-      return res.status(500).json({
-        error: "Failed to fetch compare matrix",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -824,11 +804,7 @@ router.put(
 
       return res.json(normalized);
     } catch (error) {
-      console.error("Replace compare matrix error:", error);
-      return res.status(500).json({
-        error: "Failed to replace compare matrix",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -931,11 +907,7 @@ router.post(
 
       return res.json(await fetchMatrixEntries(userId));
     } catch (error) {
-      console.error("Upsert compare matrix entry error:", error);
-      return res.status(500).json({
-        error: "Failed to upsert compare matrix entry",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -980,11 +952,7 @@ router.delete(
       }
       return res.json(await fetchMatrixEntries(userId));
     } catch (error) {
-      console.error("Remove compare matrix entries error:", error);
-      return res.status(500).json({
-        error: "Failed to remove compare matrix entries",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -1031,11 +999,7 @@ router.delete(
       }
       return res.json(await fetchMatrixEntries(userId));
     } catch (error) {
-      console.error("Remove compare matrix entry error:", error);
-      return res.status(500).json({
-        error: "Failed to remove compare matrix entry",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -1354,11 +1318,7 @@ router.get(
 
       return res.json(await getMatrixEnriched(userId));
     } catch (error) {
-      console.error("Get compare matrix details error:", error);
-      return res.status(500).json({
-        error: "Failed to fetch compare matrix details",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "compare");
     }
   },
 );
@@ -1418,11 +1378,7 @@ router.get(
 
       res.json(profiles.filter((p): p is AthleticsProfile => p !== null));
     } catch (error) {
-      console.error("Error fetching compare athletics:", error);
-      res.status(500).json({
-        error: "Failed to fetch athletics comparison",
-        details: errorDetails(error),
-      });
+      sendInternalError(req, res, error, "compare");
     }
   },
 );

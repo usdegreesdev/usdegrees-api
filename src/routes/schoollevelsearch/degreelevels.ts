@@ -8,6 +8,7 @@
 import { Router, Request, Response } from "express";
 import pool from "../../db/client";
 import { DegreeLevelRow, DegreeLevelsResponse } from "../../types/schoolPrograms";
+import { sendInternalError } from "../../utils/apiError";
 
 const router = Router({ mergeParams: true });
 
@@ -51,8 +52,7 @@ router.get("/", async (req: Request, res: Response) => {
     const response: DegreeLevelsResponse = { degrees: rows };
     return res.json(response);
   } catch (err) {
-    console.error("[degreeLevels] Error:", (err as Error).message);
-    return res.status(500).json({ error: "Internal server error" });
+    return sendInternalError(req, res, err, "degreelevels");
   }
 });
 

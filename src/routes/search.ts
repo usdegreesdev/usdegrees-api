@@ -3,6 +3,7 @@ import pool from "../db/client";
 import { SearchQueryParams, SearchResult } from "../types/search-details";
 import { normalizeEarningsFillMethod } from "../types/earnings";
 import { appendInFilter, catalogGuard, parseCatalogPaging, parseMultiValue } from "../utils/catalogPaging";
+import { sendInternalError } from "../utils/apiError";
 
 // ---------------------------------------------------------------------------
 // Types & Interfaces
@@ -313,10 +314,7 @@ router.get("/", ...catalogGuard, async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error("[/search] Query error:", (err as Error).message);
-    res.status(500).json({
-      error: "Internal server error",
-      details: (err as Error).message,
-    });
+    sendInternalError(req, res, err, "search");
   }
 });
 

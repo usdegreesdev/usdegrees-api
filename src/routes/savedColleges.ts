@@ -15,7 +15,7 @@ import { Router, Response } from "express";
 import pool from "../db/client";
 import { verifyToken } from "../middleware/auth";
 import { AuthRequest, ApiError } from "../types/user";
-import { errorDetails } from "../utils/errors";
+import { sendInternalError } from "../utils/apiError";
 
 const router = Router();
 
@@ -98,11 +98,7 @@ router.post("/", verifyToken, async (req: AuthRequest, res: Response) => {
       createdAt: row.created_at,
     });
   } catch (error) {
-    console.error("Save college error:", error);
-    return res.status(500).json({
-      error: "Failed to save college",
-      details: errorDetails(error),
-    });
+    return sendInternalError(req, res, error, "savedColleges");
   }
 });
 
@@ -154,11 +150,7 @@ router.get("/", verifyToken, async (req: AuthRequest, res: Response) => {
 
     return res.json(saved);
   } catch (error) {
-    console.error("Get saved colleges error:", error);
-    return res.status(500).json({
-      error: "Failed to fetch saved colleges",
-      details: errorDetails(error),
-    });
+    return sendInternalError(req, res, error, "savedColleges");
   }
 });
 
@@ -190,11 +182,7 @@ router.delete(
 
       return res.json({ ok: true });
     } catch (error) {
-      console.error("Delete saved college error:", error);
-      return res.status(500).json({
-        error: "Failed to delete saved college",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "savedColleges");
     }
   },
 );

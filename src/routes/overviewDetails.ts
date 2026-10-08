@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import pool from "../db/client";
 import { OverviewRow, OverviewResponse } from "../types/overview";
 import { normalizeEarningsFillMethod } from "../types/earnings";
+import { sendError, sendInternalError } from "../utils/apiError";
 
 // ---------------------------------------------------------------------------
 // Helper — safely coerce nullable numeric DB values
@@ -220,10 +221,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     const { rows } = await pool.query<OverviewRow>(sql, params);
 
     if (rows.length === 0) {
-      res.status(404).json({
-        error: "Not found",
-        details: `No data found for unitid=${unitidNum} and cip_code=${cipCode}.`,
-      });
+      sendError(req, res, 404, "NOT_FOUND");
       return;
     }
 
@@ -288,10 +286,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       `[/overview/${unitidNum}/${cipCode}] Query error:`,
       (err as Error).message,
     );
-    res.status(500).json({
-      error: "Internal server error",
-      details: (err as Error).message,
-    });
+    sendInternalError(req, res, err, "overviewDetails");
   }
 });
 

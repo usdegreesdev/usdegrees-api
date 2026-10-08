@@ -27,9 +27,7 @@ export const reportGenerationRateLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) =>
     (req as { userId?: string }).userId || ipKeyGenerator(req.ip || "unknown"),
-  message: {
-    error: "Report generation limit reached. Please try again later.",
-  },
+  handler: (req, res) => sendError(req, res, 429, "RATE_LIMITED"),
 });
 
 function envInt(name: string, fallback: number): number {
@@ -57,7 +55,7 @@ export const catalogRateLimit = rateLimit({
     if (userId) return `user:${userId}`;
     return `ip:${ipKeyGenerator(req.clientIp || req.ip || "unknown")}`;
   },
-  message: { error: "Too many requests. Please try again later." },
+  handler: (req, res) => sendError(req, res, 429, "RATE_LIMITED"),
 });
 
 /** Sitemap feed: public, IP-keyed, cheap but a full-table read. */
@@ -67,5 +65,5 @@ export const sitemapRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => `ip:${ipKeyGenerator(req.clientIp || req.ip || "unknown")}`,
-  message: { error: "Too many requests. Please try again later." },
+  handler: (req, res) => sendError(req, res, 429, "RATE_LIMITED"),
 });

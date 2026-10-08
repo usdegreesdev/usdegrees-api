@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import pool from "../db/client";
+import { sendInternalError } from "../utils/apiError";
 import {
   CATALOG_CAPS,
   catalogGuard,
@@ -44,8 +45,7 @@ router.get("/programs-by-credential", ...catalogGuard, async (req: Request, res:
     res.set("Cache-Control", "public, max-age=3600");
     res.json(rows);
   } catch (err) {
-    console.error("[/catalog/programs-by-credential] Query error:", (err as Error).message);
-    res.status(500).json({ error: "Internal server error" });
+    sendInternalError(req, res, err, "/catalog/programs-by-credential");
   }
 });
 
@@ -109,8 +109,7 @@ router.get("/schools-for-program", ...catalogGuard, async (req: Request, res: Re
       total: Number(count.rows[0]?.total ?? 0),
     });
   } catch (err) {
-    console.error("[/catalog/schools-for-program] Query error:", (err as Error).message);
-    res.status(500).json({ error: "Internal server error" });
+    sendInternalError(req, res, err, "/catalog/schools-for-program");
   }
 });
 

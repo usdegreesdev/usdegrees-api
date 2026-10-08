@@ -13,6 +13,7 @@ import { ApiError as TuitionApiError, TuitionResponse } from "../types/tuition";
 import { CampusStudentsResponse } from "../types/campus";
 import { getTuitionData } from "./tuition";
 import { getCampusData } from "./campus";
+import { sendError, sendInternalError } from "../utils/apiError";
 
 const router = Router();
 
@@ -37,11 +38,7 @@ router.get(
     const unitid = parseInt(raw, 10);
 
     if (isNaN(unitid) || unitid <= 0) {
-      const err: TuitionApiError = {
-        error: "INVALID_UNITID",
-        message: `'${raw}' is not a valid unitid. Expected a positive integer.`,
-      };
-      return res.status(400).json(err);
+      return sendError(req, res, 400, "INVALID_UNITID");
     }
 
     let tuition: TuitionResponse | null;
@@ -52,22 +49,11 @@ router.get(
         getCampusData(unitid),
       ]);
     } catch (dbErr: unknown) {
-      console.error("[college-summary] DB error for unitid=%d:", unitid, dbErr);
-      const err: TuitionApiError = {
-        error: "DATABASE_ERROR",
-        message: "An internal database error occurred. Please try again.",
-        unitid,
-      };
-      return res.status(500).json(err);
+      return sendInternalError(req, res, dbErr, "collegeSummary");
     }
 
     if (tuition === null && campus === null) {
-      const err: TuitionApiError = {
-        error: "NOT_FOUND",
-        message: `No tuition or campus data found for unitid ${unitid}.`,
-        unitid,
-      };
-      return res.status(404).json(err);
+      return sendError(req, res, 404, "NOT_FOUND");
     }
 
     const payload = {

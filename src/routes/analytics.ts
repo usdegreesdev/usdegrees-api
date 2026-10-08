@@ -4,6 +4,7 @@ import pool from "../db/client";
 import { JWT_SECRET } from "../config/jwt";
 import { verifyToken } from "../middleware/auth";
 import { AuthRequest } from "../types/user";
+import { sendInternalError } from "../utils/apiError";
 
 const router = Router();
 
@@ -149,8 +150,7 @@ router.post("/apply-click", async (req: Request, res: Response) => {
     if (error instanceof Error && error.message === "Malformed Authorization header") {
       return res.status(401).json({ error: "Malformed Authorization header" });
     }
-    console.error("[analytics/apply-click] 500 - insert failed:", error);
-    return res.status(500).json({ error: "Failed to track apply click" });
+    return sendInternalError(req, res, error, "analytics");
   }
 });
 
@@ -231,8 +231,7 @@ router.get(
         hasMore: page * limit < total,
       });
     } catch (error) {
-      console.error("[analytics/apply-clicks] 500 - query failed:", error);
-      return res.status(500).json({ error: "Failed to load apply clicks" });
+      return sendInternalError(req, res, error, "analytics");
     }
   },
 );

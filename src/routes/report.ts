@@ -20,8 +20,8 @@ import { verifyToken } from "../middleware/auth";
 import { reportGenerationRateLimit } from "../middleware/rateLimit";
 import { AuthRequest } from "../types/user";
 import pool from "../db/client";
-import { errorDetails } from "../utils/errors";
 import { sendReportDownloadEmail } from "../utils/mailer";
+import { sendError, sendInternalError } from "../utils/apiError";
 
 const router = Router();
 
@@ -178,13 +178,10 @@ router.post(
         // above, pdf_data still NULL) is the flag for manual review.
         console.error(
           `[report/generate] C1-Lite gates failed for report ${reportReferenceId}:`,
+          `requestId=${req.requestId}`,
           result.gateErrors,
         );
-        return res.status(422).json({
-          error:
-            "Report generation did not pass acceptance checks and was withheld.",
-          details: result.gateErrors.join("; "),
-        });
+        return sendError(req, res, 422, "REPORT_VALIDATION_FAILED");
       }
 
       // Render to a PDF buffer using Puppeteer — kept in memory, never
@@ -216,11 +213,7 @@ router.post(
       // mints a fresh short-lived signed download URL.
       return res.status(200).json({ reportId: reportReferenceId });
     } catch (error) {
-      console.error("Error generating college decision report:", error);
-      return res.status(500).json({
-        error: "Failed to generate report",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "report");
     }
   },
 );
@@ -270,11 +263,7 @@ router.get(
 
       return res.status(200).json({ reports, total, page, limit, hasMore });
     } catch (error) {
-      console.error("Error listing reports:", error);
-      return res.status(500).json({
-        error: "Failed to list reports",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "report");
     }
   },
 );
@@ -328,11 +317,7 @@ router.get(
         expiresAt: expiresAt.toISOString(),
       });
     } catch (error) {
-      console.error("Error fetching report:", error);
-      return res.status(500).json({
-        error: "Failed to fetch report",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "report");
     }
   },
 );
@@ -389,11 +374,7 @@ router.post(
 
       return res.status(200).json({});
     } catch (error) {
-      console.error("Error emailing report:", error);
-      return res.status(500).json({
-        error: "Failed to email report",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "report");
     }
   },
 );
@@ -450,11 +431,7 @@ router.get(
 
       return res.status(404).json({ error: "Report file not found." });
     } catch (error) {
-      console.error("Error downloading report:", error);
-      return res.status(500).json({
-        error: "Failed to download report",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "report");
     }
   },
 );

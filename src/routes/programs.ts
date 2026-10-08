@@ -31,7 +31,7 @@ import {
   DegreeLevelRawRow,
   ApiError,
 } from "../types/programs";
-import { errorDetails } from "../utils/errors";
+import { sendError, sendInternalError } from "../utils/apiError";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -297,11 +297,7 @@ router.get(
         })),
       );
     } catch (error) {
-      console.error("Get programs by credential level error:", error);
-      return res.status(500).json({
-        error: "Failed to fetch programs",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "programs");
     }
   },
 );
@@ -367,11 +363,7 @@ router.get(
         })),
       );
     } catch (error) {
-      console.error("Get schools by program error:", error);
-      return res.status(500).json({
-        error: "Failed to fetch schools",
-        details: errorDetails(error),
-      });
+      return sendInternalError(req, res, error, "programs");
     }
   },
 );
@@ -393,13 +385,7 @@ router.get(
     const unitid = parseInt(raw, 10);
 
     if (isNaN(unitid) || unitid <= 0) {
-      const err: ApiError = {
-        error: "INVALID_UNITID",
-
-        message: `'${raw}' is not a valid unitid. Expected a positive integer.`,
-      };
-
-      return res.status(400).json(err);
+      return sendError(req, res, 400, "INVALID_UNITID");
     }
 
     // ─────────────────────────────────────
@@ -421,17 +407,7 @@ router.get(
         pool.query<DegreeLevelRawRow>(DEGREE_LEVELS_QUERY, [unitid]),
       ]);
     } catch (dbErr: unknown) {
-      console.error("[programs] DB error for unitid=%d:", unitid, dbErr);
-
-      const err: ApiError = {
-        error: "DATABASE_ERROR",
-
-        message: "An internal database error occurred. Please try again.",
-
-        unitid,
-      };
-
-      return res.status(500).json(err);
+      return sendInternalError(req, res, dbErr, "programs");
     }
 
     // ─────────────────────────────────────
@@ -439,15 +415,7 @@ router.get(
     // ─────────────────────────────────────
 
     if (academicsResult.rowCount === 0) {
-      const err: ApiError = {
-        error: "NOT_FOUND",
-
-        message: `No academic data found for unitid ${unitid}.`,
-
-        unitid,
-      };
-
-      return res.status(404).json(err);
+      return sendError(req, res, 404, "NOT_FOUND");
     }
 
     // ─────────────────────────────────────

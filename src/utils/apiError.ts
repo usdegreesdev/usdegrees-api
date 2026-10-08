@@ -23,6 +23,8 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "FORBIDDEN"
   | "INVALID_REQUEST"
+  | "INVALID_UNITID"
+  | "REPORT_VALIDATION_FAILED"
   | "INTERNAL_ERROR";
 
 const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
@@ -39,6 +41,8 @@ const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
   NOT_FOUND: "Not found.",
   FORBIDDEN: "Forbidden.",
   INVALID_REQUEST: "The request is invalid.",
+  INVALID_UNITID: "unitid must be a positive integer.",
+  REPORT_VALIDATION_FAILED: "Report generation did not pass acceptance checks and was withheld.",
   INTERNAL_ERROR: "Something went wrong. Please try again.",
 };
 
