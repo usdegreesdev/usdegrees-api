@@ -121,14 +121,14 @@ test("PATCH /account/email -> 403 EMAIL_IN_COOLDOWN with eligibleAt", async () =
 });
 
 test("POST /auth/login -> 403 EMAIL_IN_COOLDOWN with eligibleAt", async () => {
-  assertCooldownEnvelope(await call("POST", "/auth/login", { body: { idToken: "x" } }));
+  assertCooldownEnvelope(await call("POST", "/auth/login", { body: { idToken: "x", age_consent: true } }));
 });
 
 test("POST /user -> 403 EMAIL_IN_COOLDOWN with eligibleAt", async () => {
   const res = await fetch(`${url}/user`, {
     method: "POST",
     headers: { Authorization: "Bearer firebase-token", "Content-Type": "application/json", "X-Forwarded-For": "198.51.100.250" },
-    body: "{}",
+    body: JSON.stringify({ age_consent: true }),
   });
   const text = await res.text();
   assertCooldownEnvelope({ res, text, json: JSON.parse(text) });

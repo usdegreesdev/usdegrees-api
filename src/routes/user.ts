@@ -111,6 +111,8 @@ router.get("/email/:email", verifyToken, async (req: AuthRequest & Request<{ ema
  * POST /auth/login resolves to this same row instead of relying on the
  * by-email relink fallback.
  */
+const ALLOWED_AUTH_PROVIDERS = new Set(["credentials", "google", "apple", "microsoft"]);
+
 router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>, res: Response<UserProfile | ApiError>) => {
   try {
     const authHeader = req.headers["authorization"];
@@ -134,6 +136,17 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
 
     const { display_name, profile_image, auth_provider, provider_user_id, age_consent } =
       req.body ?? {};
+
+    // Consent is only ever ratcheted false/null -> true; a missing or false
+    // value from the client never counts as consent and never downgrades.
+    const consentGiven = age_consent === true;
+    if (
+      auth_provider != null &&
+      (typeof auth_provider !== "string" || !ALLOWED_AUTH_PROVIDERS.has(auth_provider))
+    ) {
+      return sendError(req, res, 400, "PROFILE_INVALID");
+    }
+    const authProviderValue = auth_provider ?? null;
 
     // 1. Find the row by firebase_uid — the only trusted identity. Doing
     // this FIRST (rather than the old ON CONFLICT (email) DO UPDATE) is what
@@ -177,6 +190,12 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
       return sendError(req, res, 403, "AUTH_USER_DISABLED");
     }
 
+    // A brand-new row requires explicit 18+ consent, enforced server-side
+    // because the client checkbox can be bypassed.
+    if (!existing && !consentGiven) {
+      return sendError(req, res, 400, "AGE_CONSENT_REQUIRED");
+    }
+
     // 3. Conflict + cooldown check whenever the target email isn't already
     // this row's own — covers both a brand-new signup and a confirmed
     // Firebase-side email change. Never let a blind INSERT/UPDATE silently
@@ -218,7 +237,7 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
              profile_image     = COALESCE($4, profile_image),
              email_verified    = $5 OR email_verified,
              provider_user_id  = COALESCE($6, provider_user_id),
-             age_consent       = COALESCE($7, age_consent),
+             age_consent       = age_consent OR $7,
              last_login        = NOW()
            WHERE firebase_uid = $1
            RETURNING id, display_name, email, profile_image, role, email_verified, age_consent`,
@@ -229,7 +248,7 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
             profile_image ?? null,
             emailVerified,
             provider_user_id ?? null,
-            age_consent ?? false,
+            consentGiven,
           ],
         );
       } else {
@@ -243,10 +262,10 @@ router.post("/", async (req: Request<{}, UserProfile | ApiError, UpsertUserBody>
             email,
             display_name ?? null,
             profile_image ?? null,
-            auth_provider ?? null,
+            authProviderValue,
             emailVerified,
             provider_user_id ?? null,
-            age_consent ?? false,
+            true,
           ],
         );
       }

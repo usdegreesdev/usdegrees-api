@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import jwt, { SignOptions } from "jsonwebtoken";
-import { jwtVerify, createRemoteJWKSet, JWTPayload } from "jose";
+import type { JWTPayload } from "jose";
+import { verifyAppleIdToken } from "../services/appleToken";
 import { DecodedIdToken } from "firebase-admin/auth";
 import { firebaseAuth } from "../config/firebase";
 import pool from "../db/client";
@@ -42,11 +43,7 @@ try {
   );
 }
 
-const APPLE_ISSUER = "https://appleid.apple.com";
 const APPLE_CLIENT_ID = process.env.APPLE_CLIENT_ID;
-// createRemoteJWKSet caches the JWKS response internally and re-fetches
-// on a `kid` cache miss, so no separate caching layer is needed here.
-const appleJwks = createRemoteJWKSet(new URL(`${APPLE_ISSUER}/auth/keys`));
 
 const USER_COLUMNS =
   "id, firebase_uid, email, display_name, profile_image, role, email_verified, is_active, age_consent";
@@ -95,7 +92,7 @@ router.post(
   "/login",
   authRateLimit,
   async (
-    req: Request<{}, { token: string } | ApiError, { idToken?: string }>,
+    req: Request<{}, { token: string } | ApiError, { idToken?: string; age_consent?: boolean }>,
     res: Response,
   ) => {
     console.log("[auth/login] hit", {
@@ -181,6 +178,14 @@ router.post(
         return sendError(req, res, 403, "AUTH_USER_DISABLED");
       }
 
+      // New accounts require explicit 18+ consent (the client checkbox can be
+      // bypassed). Relinked/existing rows are found above and count as existing;
+      // a missing value is ignored for them and a stored true is never downgraded.
+      const consentGiven = req.body?.age_consent === true;
+      if (!user && !consentGiven) {
+        return sendError(req, res, 400, "AGE_CONSENT_REQUIRED");
+      }
+
       // 4. Detect a target email this row doesn't already legitimately own —
       //    either a brand-new signup (no row yet) or a confirmed Firebase-side
       //    email change (found by firebase_uid, token email differs from
@@ -231,11 +236,12 @@ router.post(
         const upserted = await pool.query<User>(
           `INSERT INTO usdusers
              (firebase_uid, email, display_name, profile_image, email_verified,
-              auth_provider, role, is_active, created_at, last_login)
-           VALUES ($1, $2, $3, $4, $5, $6, 'student', true, NOW(), NOW())
+              auth_provider, role, is_active, age_consent, created_at, last_login)
+           VALUES ($1, $2, $3, $4, $5, $6, 'student', true, $7, NOW(), NOW())
            ON CONFLICT (firebase_uid) DO UPDATE SET
              email          = EXCLUDED.email,
              email_verified = EXCLUDED.email_verified,
+             age_consent    = usdusers.age_consent OR EXCLUDED.age_consent,
              last_login     = NOW()
            RETURNING ${USER_COLUMNS}`,
           [
@@ -245,6 +251,7 @@ router.post(
             decoded.picture ?? null,
             emailVerified,
             authProvider,
+            consentGiven,
           ],
         );
         user = upserted.rows[0];
@@ -306,7 +313,7 @@ router.post(
     req: Request<
       {},
       { token: string; firebaseToken: string; user: UserProfile } | ApiError,
-      { id_token?: string; full_name?: string }
+      { id_token?: string; full_name?: string; age_consent?: boolean }
     >,
     res: Response<
       { token: string; firebaseToken: string; user: UserProfile } | ApiError
@@ -326,10 +333,7 @@ router.post(
 
       let payload: JWTPayload;
       try {
-        ({ payload } = await jwtVerify(idToken, appleJwks, {
-          issuer: APPLE_ISSUER,
-          audience: APPLE_CLIENT_ID,
-        }));
+        payload = await verifyAppleIdToken(idToken, APPLE_CLIENT_ID);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[auth/apple] 401 — jwtVerify failed: ${message}`);
@@ -413,6 +417,13 @@ router.post(
         return sendError(req, res, 403, "AUTH_USER_DISABLED");
       }
 
+      // New accounts require explicit 18+ consent. A missing value for an
+      // existing user is ignored, and a stored true is never downgraded.
+      const consentGiven = req.body?.age_consent === true;
+      if (!user && !consentGiven) {
+        return sendError(req, res, 400, "AGE_CONSENT_REQUIRED");
+      }
+
       // 3. Same conflict + cooldown check /auth/login runs before ever
       //    writing an email onto a row: covers a brand-new sign-in (no row
       //    yet) and a confirmed email change (row found by provider_user_id,
@@ -456,15 +467,16 @@ router.post(
         const upserted = await pool.query<User>(
           `INSERT INTO usdusers
              (firebase_uid, provider_user_id, email, display_name, profile_image,
-              email_verified, auth_provider, role, is_active, created_at, last_login)
-           VALUES ($1, $2, $3, $4, NULL, $5, 'apple', 'student', true, NOW(), NOW())
+              email_verified, auth_provider, role, is_active, age_consent, created_at, last_login)
+           VALUES ($1, $2, $3, $4, NULL, $5, 'apple', 'student', true, $6, NOW(), NOW())
            ON CONFLICT (firebase_uid) DO UPDATE SET
              email             = EXCLUDED.email,
              email_verified    = EXCLUDED.email_verified,
              provider_user_id  = EXCLUDED.provider_user_id,
+             age_consent       = usdusers.age_consent OR EXCLUDED.age_consent,
              last_login        = NOW()
            RETURNING ${USER_COLUMNS}`,
-          [appleUid, sub, emailValue, displayName, emailVerified],
+          [appleUid, sub, emailValue, displayName, emailVerified, consentGiven],
         );
         user = upserted.rows[0];
       } catch (err) {
