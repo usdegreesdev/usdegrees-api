@@ -1,5 +1,9 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import type { Request } from "express";
 import { sendError } from "../utils/apiError";
+
+/** Per-visitor IP bucket: verified X-Client-IP (see clientIp middleware), else req.ip. */
+const ipKey = (req: Request) => ipKeyGenerator(req.clientIp || req.ip || "unknown");
 
 /**
  * Auth endpoints (login / token exchange) have no other abuse control â€”
@@ -10,6 +14,7 @@ export const authRateLimit = rateLimit({
   limit: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => ipKey(req),
   handler: (req, res) => sendError(req, res, 429, "RATE_LIMITED"),
 });
 
@@ -26,7 +31,7 @@ export const reportGenerationRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) =>
-    (req as { userId?: string }).userId || ipKeyGenerator(req.ip || "unknown"),
+    (req as { userId?: string }).userId || ipKey(req),
   handler: (req, res) => sendError(req, res, 429, "RATE_LIMITED"),
 });
 
@@ -38,7 +43,7 @@ function envInt(name: string, fallback: number): number {
 /**
  * Public catalog routes (/search, /colleges, /colleges/search).
  * Anonymous callers are bucketed by client IP (signed X-Client-IP from the
- * Next server when valid, else req.ip — see clientIp middleware); signed-in
+ * Next server when valid, else req.ip - see clientIp middleware); signed-in
  * callers by user id with a higher ceiling. Must run after optionalAuth.
  * Limits are read at call time so they stay env-configurable.
  */
@@ -53,7 +58,7 @@ export const catalogRateLimit = rateLimit({
   keyGenerator: (req) => {
     const userId = (req as { userId?: string }).userId;
     if (userId) return `user:${userId}`;
-    return `ip:${ipKeyGenerator(req.clientIp || req.ip || "unknown")}`;
+    return `ip:${ipKey(req)}`;
   },
   handler: (req, res) => sendError(req, res, 429, "RATE_LIMITED"),
 });
@@ -64,6 +69,6 @@ export const sitemapRateLimit = rateLimit({
   limit: (_req) => envInt("SITEMAP_RATE_LIMIT_PER_MIN", 30),
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => `ip:${ipKeyGenerator(req.clientIp || req.ip || "unknown")}`,
+  keyGenerator: (req) => `ip:${ipKey(req)}`,
   handler: (req, res) => sendError(req, res, 429, "RATE_LIMITED"),
 });
