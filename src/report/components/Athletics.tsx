@@ -134,7 +134,7 @@ export default function Athletics({
                   <div
                     style={{ fontSize: "11px", color: theme.color.inkMuted }}
                   >
-                    No athletics data on file for this institution.
+                    Not available in the federal EADA database; the institution may not be required to report athletics data under federal disclosure requirements.
                   </div>
                 </div>
               );
@@ -319,7 +319,7 @@ export default function Athletics({
                       paddingTop: "8px",
                     }}
                   >
-                    {a.divisionBenchmark.division} division average: {num(a.divisionBenchmark.avgAthletesTotal)} athletes, {money(a.divisionBenchmark.avgAidPerAthlete)} aid/athlete - computed
+                    {a.divisionBenchmark.division} division average: {num(a.divisionBenchmark.avgAthletesTotal)} athletes, {money(a.divisionBenchmark.avgAidPerAthlete)} aid/athlete
                   </div>
                 )}
               </div>

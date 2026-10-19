@@ -167,7 +167,9 @@ BRANCHES:
 - If fit_label is "Not applicable", write "Academic Fit: Not applicable." followed by the
   disclosure.supporting_copy verbatim, explaining why a test-score-based fit classification
   cannot be calculated. Do not report a fit score.
-- There is no "Safety" tier — fit_label is only "Target/Match", "Reach", or "Not applicable".
+- If fit_label starts with "Not shown", the student gave no SAT score: do not name any fit
+  category (no "Target/Match" or "Reach"); say fit is not shown because no SAT score was provided.
+- There is no "Safety" tier — fit_label is only "Target/Match", "Reach", "Not applicable", or "Not shown – no SAT score provided".
   When fit_label is "Target/Match" or "Reach", state the published SAT range (sat_25–sat_75),
   where the student's sat_score falls relative to it, and the resulting fit_label. Always add:
   "This classification is an Admission Fit Estimate and does not represent admission
@@ -199,7 +201,7 @@ WRITE ONLY THESE (lengths are ceilings):
 - net_price_note: state cost_range_low/high and the bracket label if present. ≤90 words.
 - fit_sentences: one per school — bands if present, disclosure copy, merit/reach framing, and
   the Admission Fit Estimate disclaimer (see BRANCHES). ≤70 words each.
-- earnings_paragraph: program_earnings per school with its method flag (e.g. user_reported)
+- earnings_paragraph: program_earnings per school with its method label (e.g. Census-reported)
   and the earnings range. Do NOT state the earnings vintage year here — the figure and its
   method flag only. No "best". ≤90 words.
 - debt_burden_paragraph: state each school's avg_debt (typical debt at completion) and its
@@ -320,7 +322,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     student.sat_score == null ? "No SAT score was provided, so academic fit is not shown." : "Academic fit is shown where the disclosure category allows it."
   }`;
 
-  const analyst_note = `This report evaluates ${schools.length} programs${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures; some estimated figures are based on a study of inflation for that program's earnings year and on program trends, rather than the raw dataset alone. Where a figure is not published, it is shown as "not published" rather than substituted with a typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
+  const analyst_note = `This report evaluates ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures. Most figures come directly from public federal datasets. Where Census PSEO program earnings data is unavailable, clearly labelled estimates may be generated using real reported earnings and program-level trends, rather than the raw dataset alone. Estimates are never chained from other estimates and are not presented as official Census-published figures. Where a figure is not published and no valid real-data anchor exists, it is shown as "Not Published" rather than substituted with an estimate or typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
 
   const net_price_note = student.income_bracket_label
     ? `Net price below reflects the ${student.income_bracket_label} income bracket. ${derived_flags.cost_range_low && derived_flags.cost_range_high ? `Across the selected schools it ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.` : "Figures are not published for one or more schools."}`
@@ -350,7 +352,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
 
   const earnings_paragraph = schools
     // Earnings vintage year is deliberately omitted here; only the method flag
-    // (e.g. user_reported) is surfaced next to the figure.
+    // (e.g. Census-reported) is surfaced next to the figure.
     .map((s) => `${s.display_name}: ${money(s.program_earnings)}${s.earnings_method_flag ? ` (${s.earnings_method_flag})` : ""}.`)
     .join(" ") + (derived_flags.earnings_range_low && derived_flags.earnings_range_high
       ? ` Range across selected schools: ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`

@@ -250,7 +250,7 @@ export default function Cover({
             </div>
             <div>{generatedDate}</div>
             <div style={{ color: theme.color.gold, fontWeight: 600 }}>
-              Schema Validated
+              Sources Documented · Calculations Re-Checked
             </div>
           </div>
         </div>

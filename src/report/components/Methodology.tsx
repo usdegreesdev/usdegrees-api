@@ -106,33 +106,29 @@ export default function Methodology({
                   </div>
 
                   <div>
-                    <strong>User Reported:</strong> Real PSEO value — measured, not
+                    <strong>Census-reported:</strong> Real PSEO value — measured, not
                     estimated.
                   </div>
 
                   <div>
-                    <strong>Interpolated:</strong> Estimated between two real
-                    points; most reliable estimate.
+                    <strong>Estimated (between two real values):</strong>{" "}
+                    Estimated between two real points; most reliable estimate.
                   </div>
 
                   <div>
-                    <strong>Extrapolated:</strong> Estimated from a nearer
-                    real-data anchor.
+                    <strong>Estimated (from one nearby real value):</strong>{" "}
+                    Estimated from a nearer real-data anchor.
                   </div>
 
                   <div>
-                    <strong>Low Confidence:</strong> Single-anchor or
-                    declining-trajectory estimate; use with caution.
+                    <strong>Estimated — low confidence:</strong> Single-anchor
+                    or declining-trajectory estimate; use with caution.
                   </div>
 
                   <div>
-                    <strong>Skipped Future:</strong> Not generated because the
-                    outcome year has not yet occurred.
-                  </div>
-
-                  <div>
-                    <strong>Skipped No Anchor:</strong> Not generated because no
-                    real value was available to anchor the estimate.
+                    <strong>Not published:</strong> No value is shown because
+                    the outcome year has not yet occurred or no real value was
+                    available to anchor an estimate.
                   </div>
                 </div>
               </div>
@@ -161,15 +157,15 @@ export default function Methodology({
               }}
             >
               This report is neutral and comparative only — it does not rank,
-              recommend, or select a school. Figures are drawn from public
-              federal datasets; however, where PSEO program earnings are
-              unavailable, clearly labelled values may be modelled using the
-              U.S. Degrees earnings imputation methodology. These estimates are
-              derived only from real reported earnings, are never chained from
-              other estimates, and are not presented as official
-              Census-published figures. Where no reported value or valid
-              real-data anchor exists, no estimate is generated. Confirm all
-              figures directly with each institution before making a decision.
+              recommend, or select a school. Most figures come directly from
+              public federal datasets. Where Census PSEO program earnings data
+              is unavailable, we may show a clearly labelled estimate derived
+              only from real reported earnings, using the U.S. Degrees earnings
+              imputation methodology. Estimates are never chained from other
+              estimates and are not presented as official Census-published
+              figures. Where no reported value or valid real-data anchor
+              exists, no estimate is generated. Confirm all figures directly
+              with each institution before making a decision.
             </p>
           </div>
         </div>
@@ -205,7 +201,7 @@ export default function Methodology({
                 color: theme.color.navy,
               }}
             >
-              SCHEMA VALIDATED
+              SOURCES DOCUMENTED · CALCULATIONS RE-CHECKED
             </div>
           </div>
           <div style={{ textAlign: "right" }}>

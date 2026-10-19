@@ -173,7 +173,7 @@ export default function CareerOutcomes({
                   }}
                 >
                   {s.avg_debt != null
-                    ? `$${s.avg_debt.toLocaleString()}`
+                    ? `$${s.avg_debt.toLocaleString()}${s.avg_debt === 0 ? " *" : ""}`
                     : "Not published"}
                 </td>
                 {(() => {
@@ -201,8 +201,24 @@ export default function CareerOutcomes({
           </tbody>
         </table>
 
+        {schools.some((s) => s.avg_debt === 0) && (
+          <p
+            style={{
+              fontSize: "10px",
+              lineHeight: "1.5",
+              color: theme.color.inkMuted,
+              margin: "-12px 0 12px 0",
+            }}
+          >
+            * A typical debt value of $0 may indicate that the college does not
+            offer financial aid or that the actual reported student debt is
+            zero. For further details, please contact the college’s admissions
+            office.
+          </p>
+        )}
+
         {/* Earnings method footnotes — vintage years are deliberately omitted;
-            only the method flag (e.g. user_reported) is surfaced. Schools with
+            only the method flag (e.g. Census-reported) is surfaced. Schools with
             no method flag contribute no line. */}
 
             

@@ -15,6 +15,24 @@ function money(v: number | null): string {
   return v != null ? `$${v.toLocaleString()}` : "Not published";
 }
 
+type Tuition = C1LitePayload["college_details"][number]["tuition"];
+
+// True when any cost component in the row is "Not published".
+function hasUnpublished(t: Tuition): boolean {
+  return [
+    t.sticker_price,
+    t.net_price,
+    t.tuition_in_state,
+    t.tuition_out_state,
+    t.room_board_on_campus,
+    t.room_board_off_campus,
+    t.books_supply,
+    t.other_expense_on_campus,
+    t.other_expense_off_campus,
+    t.other_expense_with_family,
+  ].some((v) => v == null);
+}
+
 /**
  * One row per unique college (payload.college_details is already deduped by
  * unitid) — the full sticker/tuition/living-cost breakdown is school-level,
@@ -134,9 +152,11 @@ export default function TuitionCosts({
                   }}
                 >
                   {money(c.tuition.sticker_price)}
+                  {hasUnpublished(c.tuition) ? " *" : ""}
                 </td>
                 <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.net_price)}
+                  {hasUnpublished(c.tuition) ? " *" : ""}
                 </td>
                 <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
                   {money(c.tuition.tuition_in_state)}
@@ -178,6 +198,19 @@ export default function TuitionCosts({
           Net Price is the estimated average price after student aid. Sticker Price is the figure on file before estimated financial-aid
           calculations.
         </p>
+        {college_details.some((c) => hasUnpublished(c.tuition)) && (
+          <p
+            style={{
+              fontSize: "10px",
+              lineHeight: "1.5",
+              color: theme.color.inkMuted,
+              margin: "8px 0 0 0",
+            }}
+          >
+            * If any value is marked “Not Published,” the net price and sticker
+            price are estimates and may vary from the actual cost of attendance.
+          </p>
+        )}
       </div>
 
       <PageFooter

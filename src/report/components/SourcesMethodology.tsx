@@ -177,14 +177,13 @@ export default function SourcesMethodology({
             }}
           >
             We do not buy, sell, or blend data with commercial or institutional
-            sources. If a figure is missing from the underlying federal dataset,
-            it is shown as N/A — never estimated. Program earnings data may
-            include estimated values where Census PSEO figures are unavailable.
-            These estimates are derived only from real reported earnings using
-            program- and credential-level growth patterns; they are never
-            generated from other estimates. Estimated values are clearly
-            distinguished from reported Census figures and should be treated as
-            indicative, not as measured earnings for a specific program
+            sources. Missing figures in the underlying federal datasets are
+            shown as N/A — never estimated, except for program earnings where
+            Census PSEO data is unavailable. Such earnings estimates are
+            clearly labelled and derived only from real reported earnings using
+            program- and credential-level growth patterns. They are never
+            generated from other estimates and should be treated as indicative,
+            not as measured earnings for a specific program.
           </p>
         </div>
       </div>

@@ -150,6 +150,17 @@ async function resolveCredentialLevel(
 // skipped_no_anchor rows, so it could surface either the placeholder cohort
 // or an unrelated credential tier's figure as if it were a real citation.
 // ------------------------------------------------------------------
+// Parent-facing labels for the internal earnings method enum. Raw enum values
+// (e.g. "user_reported") must never reach the report.
+const EARNINGS_METHOD_LABELS: Record<string, string> = {
+  user_reported: "Census-reported",
+  interpolated: "Estimated (between two real values)",
+  extrapolated: "Estimated (from one nearby real value)",
+  low_confidence: "Estimated — low confidence",
+  skipped_future: "Not published",
+  skipped_no_anchor: "Not published",
+};
+
 async function fetchProgramEarnings(
   unitid: number,
   programCip?: string,
@@ -166,7 +177,7 @@ async function fetchProgramEarnings(
       // '0000' means this figure isn't tied to any real graduating cohort —
       // citing it as a year would be worse than citing no year at all.
       vintage: year10.cohort === "0000" ? null : Number(year10.cohort),
-      method_flag: year10.method,
+      method_flag: EARNINGS_METHOD_LABELS[year10.method] ?? null,
     };
   }
   // Aggregate across the school's programs (no specific program resolved).
@@ -184,7 +195,7 @@ async function fetchProgramEarnings(
   return {
     earnings: avg,
     vintage: "school-level average",
-    method_flag: `aggregated year_10 across ${vals.length} programs`,
+    method_flag: `School-level average across ${vals.length} programs`,
   };
 }
 
@@ -511,6 +522,12 @@ export async function buildC1LitePayload(args: {
       );
       fitScore = fit.category === "Unavailable" ? null : fit.score;
       fitLabel = fit.category;
+      // No student test score → any Target/Match / Reach label would be
+      // fabricated from the school's admit rate alone. Show a neutral label.
+      if (studentTotalSat == null) {
+        fitScore = null;
+        fitLabel = "Not shown – no SAT score provided";
+      }
     }
 
     // ROI — roi_20yr is a real precomputed figure (roi table), NOT derived
@@ -542,10 +559,7 @@ export async function buildC1LitePayload(args: {
       sat_25: sat25,
       sat_75: sat75,
       sat_vintage: sat25 != null || sat75 != null ? ADMISSIONS_VINTAGE : null,
-      fit_score:
-        studentTotalSat == null && fitLabel !== "Not applicable"
-          ? null
-          : fitScore,
+      fit_score: fitScore,
       fit_label: fitLabel,
       sat_data_category: category,
       disclosure: disc,
