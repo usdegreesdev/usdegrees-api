@@ -1,0 +1,211 @@
+name: Deploy API to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys at once, and never cancel one mid-flight.
+concurrency:
+  group: deploy-usdegrees-api
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  validate:
+    name: Validate & build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # No lint script/config exists in this repo, so tsc is the static check.
+      - name: Type check
+        run: npx tsc --noEmit -p .
+
+      # The repo currently has no *.test.ts files; only run the suite if some exist.
+      - name: Tests
+        run: |
+          if [ -n "$(git ls-files '*.test.ts')" ]; then
+            npm test
+          else
+            echo "No test files found - skipping."
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build output
+        run: test -f dist/server.js
+
+      # Artifact holds code only: no .env, no credentials, no node_modules,
+      # no generated reports. Production deps are installed on the VPS.
+      - name: Package release
+        run: |
+          tar -czf release.tgz \
+            --exclude='public/reports' \
+            dist public package.json package-lock.json
+          if tar -tzf release.tgz | grep -Ei '(^|/)\.env|service-?account'; then
+            echo "::error::Secret-like file found in artifact"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-release
+          path: release.tgz
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to VPS
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      APP_DIR: /var/www/usdegrees/api # symlink to the active release (one-time cutover, see docs)
+      RELEASES_DIR: /var/www/usdegrees/api-releases
+      SHARED_DIR: /var/www/usdegrees/api-shared # .env, storage/, Firebase credentials
+      PM2_NAME: usdegrees-api
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: api-release
+
+      - name: Configure SSH (verified host key)
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VPS_KNOWN_HOSTS" ]; then
+            echo "::error::VPS_KNOWN_HOSTS secret is empty. Add the VPS host key line(s)."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          {
+            echo "Host vps"
+            echo "  HostName ${VPS_HOST}"
+            echo "  User ${VPS_USER}"
+            echo "  Port ${VPS_PORT:-22}"
+            echo "  IdentityFile ~/.ssh/id_deploy"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking yes"
+            echo "  UserKnownHostsFile ~/.ssh/known_hosts"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Upload release (does not touch the running API)
+        run: |
+          set -euo pipefail
+          ssh vps "mkdir -p '${RELEASES_DIR}/.incoming'"
+          scp release.tgz "vps:${RELEASES_DIR}/.incoming/${GITHUB_SHA}.tgz"
+
+      - name: Activate release (automatic rollback on failure)
+        run: |
+          ssh vps "APP_DIR='${APP_DIR}' RELEASES_DIR='${RELEASES_DIR}' SHARED_DIR='${SHARED_DIR}' PM2_NAME='${PM2_NAME}' RELEASE_ID='${GITHUB_SHA}' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          # Serialize deploys on the host as well.
+          exec 9>"$RELEASES_DIR/.deploy.lock"
+          flock -n 9 || { echo "Another deploy is running"; exit 1; }
+
+          REL="$RELEASES_DIR/$RELEASE_ID"
+          TARBALL="$RELEASES_DIR/.incoming/$RELEASE_ID.tgz"
+
+          # ---- preflight (nothing live is touched) ----
+          [ -f "$TARBALL" ]            || { echo "Missing upload $TARBALL"; exit 1; }
+          [ -f "$SHARED_DIR/.env" ]    || { echo "Missing $SHARED_DIR/.env - run one-time setup"; exit 1; }
+          [ -d "$SHARED_DIR/storage" ] || { echo "Missing $SHARED_DIR/storage - run one-time setup"; exit 1; }
+          [ -L "$APP_DIR" ]            || { echo "$APP_DIR is not a symlink - run one-time cutover"; exit 1; }
+          pm2 describe "$PM2_NAME" >/dev/null || { echo "PM2 process $PM2_NAME not found"; exit 1; }
+
+          # Same default as src/server.ts. Only the PORT line is read; nothing else is printed.
+          PORT="$(grep -E '^PORT=' "$SHARED_DIR/.env" | tail -n1 | cut -d= -f2- | tr -d "\"' \r" || true)"
+          PORT="${PORT:-8000}"
+          HEALTH_URL="http://127.0.0.1:${PORT}/health"
+
+          # ---- stage new release ----
+          rm -rf "$REL"; mkdir -p "$REL"
+          tar -xzf "$TARBALL" -C "$REL"
+          ln -s "$SHARED_DIR/.env"    "$REL/.env"
+          ln -s "$SHARED_DIR/storage" "$REL/storage"
+          (cd "$REL" && npm ci --omit=dev --no-audit --no-fund)
+
+          # ---- smoke-test the new build on a spare port before switching ----
+          # (dotenv does not override an already-set PORT, so this does not collide with the live API.)
+          TEST_PORT=18999
+          (cd "$REL" && PORT=$TEST_PORT exec node dist/server.js >"$REL/smoke.log" 2>&1) &
+          SMOKE_PID=$!
+          ok=0
+          for i in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:$TEST_PORT/health" >/dev/null 2>&1; then ok=1; break; fi
+            kill -0 "$SMOKE_PID" 2>/dev/null || break
+            sleep 1
+          done
+          kill "$SMOKE_PID" 2>/dev/null || true
+          wait "$SMOKE_PID" 2>/dev/null || true
+          if [ "$ok" != 1 ]; then
+            echo "Smoke test failed; live API untouched. Last 20 log lines (may contain app errors):"
+            tail -n 20 "$REL/smoke.log"
+            rm -rf "$REL"
+            exit 1
+          fi
+          rm -f "$REL/smoke.log"
+
+          # ---- activate ----
+          PREV="$(readlink -f "$APP_DIR")"
+          echo "Previous release: $PREV"
+          switch_to() { ln -sfn "$1" "$APP_DIR.tmp" && mv -Tf "$APP_DIR.tmp" "$APP_DIR"; }
+
+          wait_healthy() {
+            for i in $(seq 1 30); do
+              curl -fsS "$HEALTH_URL" >/dev/null 2>&1 && return 0
+              sleep 2
+            done
+            return 1
+          }
+
+          rollback() {
+            echo "::error::Deploy failed - rolling back to $PREV"
+            switch_to "$PREV"
+            pm2 restart "$PM2_NAME" --update-env || true
+            if wait_healthy; then echo "Rollback succeeded."; else echo "::error::Rollback health check FAILED - manual intervention required"; fi
+            exit 1
+          }
+
+          switch_to "$REL"
+          pm2 restart "$PM2_NAME" --update-env || rollback
+          wait_healthy || rollback
+          echo "Health check passed on $HEALTH_URL"
+
+          # ---- cleanup: keep the active + previous release and the 3 newest others ----
+          rm -f "$TARBALL"
+          cd "$RELEASES_DIR"
+          for old in $(ls -1dt */ | tr -d / | tail -n +5); do
+            case "$RELEASES_DIR/$old" in "$REL"|"$PREV") continue;; esac
+            rm -rf "$RELEASES_DIR/$old"
+          done
+          echo "Deployed $RELEASE_ID"
+          REMOTE
