@@ -46,6 +46,9 @@ const PROFILE_FIELD_MAP: Record<string, string> = {
   preferredCollegeType: "preferred_college_type",
 };
 
+/** Earliest accepted graduation year. */
+const MIN_GRADUATION_YEAR = 2000;
+
 /** Allowed values for preferred_college_type (empty/NULL = no preference). */
 const COLLEGE_TYPES = ["Public", "Private"] as const;
 
@@ -213,6 +216,26 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
               400,
               "PROFILE_INVALID",
               "satScore must be an integer between 400 and 1600, or null to clear",
+            );
+          }
+          value = n;
+        }
+      } else if (column === "graduation_year") {
+        // null clears it; otherwise it must be a whole year >= 2000 (no upper
+        // bound, future graduation years are allowed).
+        if (value !== null) {
+          const n = typeof value === "string" ? Number(value.trim()) : value;
+          if (
+            typeof n !== "number" ||
+            !Number.isInteger(n) ||
+            n < MIN_GRADUATION_YEAR
+          ) {
+            return sendError(
+              req,
+              res,
+              400,
+              "PROFILE_INVALID",
+              "Please enter a valid graduation year.",
             );
           }
           value = n;
