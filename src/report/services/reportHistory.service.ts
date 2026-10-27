@@ -42,7 +42,7 @@ export interface PendingReport {
  * attachReportPdfAndColleges, so the row is left visibly incomplete for
  * manual follow-up instead of silently disappearing.
  */
-export async function createPendingReport(userId: number): Promise<PendingReport> {
+export async function createPendingReport(userId: number, creditSpent = false): Promise<PendingReport> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -60,10 +60,10 @@ export async function createPendingReport(userId: number): Promise<PendingReport
     }
 
     const result = await client.query<{ created_at: string }>(
-      `INSERT INTO usdreports (user_id, report_reference_id)
-       VALUES ($1, $2)
+      `INSERT INTO usdreports (user_id, report_reference_id, credit_spent)
+       VALUES ($1, $2, $3)
        RETURNING created_at`,
-      [userId, reportReferenceId],
+      [userId, reportReferenceId, creditSpent],
     );
 
     await client.query("COMMIT");

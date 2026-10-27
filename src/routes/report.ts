@@ -22,6 +22,8 @@ import { AuthRequest } from "../types/user";
 import pool from "../db/client";
 import { sendReportDownloadEmail } from "../utils/mailer";
 import { sendError, sendInternalError } from "../utils/apiError";
+import { paymentRequired } from "../config/stripe";
+import { consumeCredit, refundCredit } from "../services/credits.service";
 
 const router = Router();
 
@@ -78,6 +80,9 @@ router.post(
   verifyToken,
   reportGenerationRateLimit,
   async (req: AuthRequest, res: Response<{ reportId: string } | ApiError>) => {
+    // Set once a Stripe report credit has been spent, so a failed generation
+    // can give it back.
+    let spentCreditFor: number | null = null;
     try {
       const { selectedColleges, programId } = req.body as GenerateReportRequest;
       const firebaseUid = req.userId;
@@ -154,10 +159,19 @@ router.post(
         programCip = progRes.rows[0]?.cip_code;
       }
 
+      // Spend one prepaid credit (atomic) only after all cheap validation has
+      // passed. Off unless STRIPE_REQUIRE_PAYMENT=true.
+      if (paymentRequired()) {
+        if (!(await consumeCredit(userId))) {
+          return sendError(req, res, 402, "PAYMENT_REQUIRED");
+        }
+        spentCreditFor = userId;
+      }
+
       // Reserve the durable report_reference_id before generation so the
       // content itself cites the same id that ends up persisted.
       const { reportReferenceId, createdAt } =
-        await createPendingReport(userId);
+        await createPendingReport(userId, spentCreditFor !== null);
 
       // NOTE: no income bracket is captured anywhere in intake yet (no
       // column on usdusers, no field on this request). Net price renders as
@@ -181,6 +195,7 @@ router.post(
           `requestId=${req.requestId}`,
           result.gateErrors,
         );
+        if (spentCreditFor) await refundCredit(spentCreditFor);
         return sendError(req, res, 422, "REPORT_VALIDATION_FAILED");
       }
 
@@ -213,6 +228,11 @@ router.post(
       // mints a fresh short-lived signed download URL.
       return res.status(200).json({ reportId: reportReferenceId });
     } catch (error) {
+      if (spentCreditFor) {
+        await refundCredit(spentCreditFor).catch((e) =>
+          console.error("[report/generate] credit refund failed", e),
+        );
+      }
       return sendInternalError(req, res, error, "report");
     }
   },

@@ -26,6 +26,7 @@ export type ErrorCode =
   | "AGE_CONSENT_REQUIRED"
   | "INVALID_UNITID"
   | "REPORT_VALIDATION_FAILED"
+  | "PAYMENT_REQUIRED"
   | "INTERNAL_ERROR";
 
 const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
@@ -45,6 +46,7 @@ const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
   AGE_CONSENT_REQUIRED: "You must confirm you are 18 or older to create an account.",
   INVALID_UNITID: "unitid must be a positive integer.",
   REPORT_VALIDATION_FAILED: "Report generation did not pass acceptance checks and was withheld.",
+  PAYMENT_REQUIRED: "A report credit is required. Please purchase a pack to continue.",
   INTERNAL_ERROR: "Something went wrong. Please try again.",
 };
 

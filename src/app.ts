@@ -7,6 +7,7 @@ import path from 'path'
 import { clientIp } from './middleware/clientIp'
 import { requestId } from './middleware/requestId'
 import { sendError } from './utils/apiError'
+import { stripeWebhook } from './routes/billing'
 
 export const app = express()
 
@@ -70,6 +71,8 @@ app.use((err: Error & { status?: number }, req: Request, res: Response, next: Ne
 
 morgan.token("redacted-url", (req: Request) => redactSensitiveQueryParams(req.originalUrl || req.url))
 app.use(morgan(':method :redacted-url :status :res[content-length] - :response-time ms'))
+// Stripe signs the raw body, so this must be registered before express.json().
+app.post('/billing/webhook', express.raw({ type: 'application/json' }), stripeWebhook)
 app.use(express.json())
 app.use(clientIp)
 
