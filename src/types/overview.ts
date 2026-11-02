@@ -24,6 +24,13 @@ export interface OverviewRow {
   sat_math_min: number | null;
   sat_math_max: number | null;
   sat_avg_overall: number | null;
+  publish_publicly: boolean | null;
+  school_min_range: number | null;
+  school_max_range: number | null;
+  sat_p25_reading: number | null;
+  sat_p75_reading: number | null;
+  sat_p25_math: number | null;
+  sat_p75_math: number | null;
 
   // admission_disclosure_categories (nulled when the disclosure is suppressed)
   sat_disclosure_category: string | null;
@@ -81,6 +88,13 @@ export interface OverviewResponse {
     sat_math_min: number | null;
     sat_math_max: number | null;
     sat_avg_overall: number | null;
+    publish_publicly: boolean | null;
+    school_min_range: number | null;
+    school_max_range: number | null;
+    sat_p25_reading: number | null;
+    sat_p75_reading: number | null;
+    sat_p25_math: number | null;
+    sat_p75_math: number | null;
     satDisclosureCategory: string | null;
     badgeLabel: string | null;
     badgeColor: string | null;

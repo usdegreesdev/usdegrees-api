@@ -98,6 +98,13 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       ad.sat_math_min             AS sat_math_min,
       ad.sat_math_max             AS sat_math_max,
       ad.sat_avg_overall          AS sat_avg_overall,
+      ad.publish_publicly         AS publish_publicly,
+      ad.school_min_range         AS school_min_range,
+      ad.school_max_range         AS school_max_range,
+      ad.sat_p25_reading          AS sat_p25_reading,
+      ad.sat_p75_reading          AS sat_p75_reading,
+      ad.sat_p25_math             AS sat_p25_math,
+      ad.sat_p75_math             AS sat_p75_math,
 
       -- ── SAT disclosure category (suppressed unless published) ─────────
       -- When the disclosure row is suppressed (publish_publicly = false, e.g.
@@ -240,6 +247,13 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
         sat_math_min: safeNum(row.sat_math_min),
         sat_math_max: safeNum(row.sat_math_max),
         sat_avg_overall: safeNum(row.sat_avg_overall),
+        publish_publicly: row.publish_publicly ?? null,
+        school_min_range: safeNum(row.school_min_range),
+        school_max_range: safeNum(row.school_max_range),
+        sat_p25_reading: safeNum(row.sat_p25_reading),
+        sat_p75_reading: safeNum(row.sat_p75_reading),
+        sat_p25_math: safeNum(row.sat_p25_math),
+        sat_p75_math: safeNum(row.sat_p75_math),
         satDisclosureCategory: row.sat_disclosure_category ?? null,
         badgeLabel: row.badge_label ?? null,
         badgeColor: row.badge_color ?? null,
