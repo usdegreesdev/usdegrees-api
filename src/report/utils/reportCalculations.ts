@@ -200,12 +200,12 @@ export async function fetchReportData(
         programDebt = pDebtRes.rows[0] || {};
       }
 
-      // Sticker Price & Net Price calculations
-      const sticker = cost.tuition_out_state
-        ? cost.tuition_out_state + (cost.roomboard_oncampus || 15000)
-        : cost.tuition_in_state
-        ? cost.tuition_in_state + (cost.roomboard_oncampus || 15000)
-        : null;
+      // Use the published sticker price from the costs row; do not estimate
+      // it from tuition components or substitute a value when it is missing.
+      const sticker =
+        cost.sticker_price_by_api != null
+          ? parseFloat(cost.sticker_price_by_api)
+          : null;
 
       // Net price default to overall net price
       const net = cost.avg_net_price_overall || cost.avg_net_price_public || cost.avg_net_price_private || null;
