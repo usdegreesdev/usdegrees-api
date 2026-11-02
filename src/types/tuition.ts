@@ -10,6 +10,7 @@ export interface TuitionRawRow {
   tuition_out_state: number | null;
   booksupply: number | null;
   sticker_price_by_api: number | null;
+  sticker_price_year: string | null;
   roomboard_oncampus: number | null;
   roomboard_offcampus: number | null;
   otherexpense_oncampus: number | null;
@@ -36,6 +37,7 @@ export interface TuitionResponse {
     tuition_out_state: number | null;
     booksupply: number | null;
     sticker_price_by_api: number | null;
+    sticker_price_year: string | null;
   };
   housing: {
     roomboard_oncampus: number | null;
