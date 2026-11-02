@@ -3,6 +3,7 @@ import { firebaseAuth } from "../config/firebase";
 import pool from "../db/client";
 import { verifyToken } from "../middleware/auth";
 import { normalizeDegreeLevel } from "../constants/degreeLevels";
+import { HOUSEHOLD_INCOME_RANGES } from "../constants/householdIncome";
 import { getValidStateCodes } from "../db/statesCache";
 import { ApiError, AuthRequest } from "../types/user";
 import { sendEmailChangeRejection, sendError, sendInternalError } from "../utils/apiError";
@@ -44,6 +45,7 @@ const PROFILE_FIELD_MAP: Record<string, string> = {
   highSchoolName: "high_school_name",
   preferredDegreeLevel: "preferred_degree_level",
   preferredCollegeType: "preferred_college_type",
+  householdIncomeRange: "household_income_range",
 };
 
 /** Earliest accepted graduation year. */
@@ -202,6 +204,23 @@ router.patch("/", verifyToken, async (req: AuthRequest, res: Response) => {
             `preferredCollegeType must be one of ${COLLEGE_TYPES.join(
               ", ",
             )}, or empty to clear`,
+          );
+        }
+      } else if (column === "household_income_range") {
+        // null clears it; otherwise it must be one of the stable slab ids.
+        if (
+          value !== null &&
+          !(
+            typeof value === "string" &&
+            (HOUSEHOLD_INCOME_RANGES as readonly string[]).includes(value)
+          )
+        ) {
+          return sendError(
+            req,
+            res,
+            400,
+            "PROFILE_INVALID",
+            "householdIncomeRange must be a valid income range, or null to clear",
           );
         }
       } else if (column === "sat_score") {
