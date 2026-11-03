@@ -31,6 +31,29 @@ export const EMPTY_PREFERENCES: UserPreferences = {
   preferredMajors: [],
 };
 
+const PROGRAM_SEARCH_TERMS: Record<string, string> = {
+  "Electrical Engineering": "Electrical, Electronics",
+  "Biomedical Engineering": "Biomedical/Medical Engineering",
+  "Aerospace Engineering": "Aerospace",
+  "Healthcare Administration": "Health and Medical Administrative",
+  "Physical Therapy / Rehabilitation": "Rehabilitation and Therapeutic",
+  Education: "Education, General",
+  English: "English Language",
+  Communications: "Communication and Media",
+  "Fine Arts": "Fine and Studio Arts",
+  "Graphic Design": "Design and Applied Arts",
+  Theatre: "Drama",
+  "Languages and Linguistics": "Linguistic",
+  Entrepreneurship: "Entrepreneurial",
+  "Environmental Science": "Natural Resources",
+  Aviation: "Air Transportation",
+  "Automotive Technology": "Vehicle Maintenance",
+};
+
+export function getProgramSearchTerm(label: string): string {
+  return PROGRAM_SEARCH_TERMS[label] ?? label;
+}
+
 /** Maps usdusers.preferred_degree_level (canonical name) -> credential_level id. */
 export function degreeLevelNameToCredentialId(name: unknown): number | null {
   const canonical = normalizeDegreeLevel(name);
@@ -83,7 +106,9 @@ export function buildPersonalizedCategoryQuery(
     conditions.push(`s.state = ANY($${params.length}::text[])`);
   }
   if (prefs.preferredMajors.length > 0) {
-    params.push(prefs.preferredMajors.map((m) => `%${m}%`));
+    params.push(
+      prefs.preferredMajors.map((major) => `%${getProgramSearchTerm(major)}%`),
+    );
     conditions.push(`p.title ILIKE ANY($${params.length}::text[])`);
   }
 
