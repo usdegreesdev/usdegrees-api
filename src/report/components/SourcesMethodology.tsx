@@ -23,7 +23,7 @@ const SOURCES: SourceRow[] = [
     source: "College Scorecard API",
     domain: "collegescorecard.ed.gov",
     usedFor:
-      "University Details, Academic Data, Completion Rates, Median Debt, Graduation Rate, Admission Rate, SAT Ranges, Retention",
+      "University Details, Academic Data, Completion Rates, Median Debt, Graduation Rate, Admission Rate, SAT Ranges, Retention, Net Price by Household Income Range",
     notes: "U.S. Dept. of Education",
   },
   {
@@ -81,7 +81,7 @@ export default function SourcesMethodology({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 09 · PRIMARY SOURCES"
+          sectionLabel="SECTION 01 · PRIMARY SOURCES"
           title="Primary Data Sources"
         />
 

@@ -33,7 +33,7 @@ export default function AnalystNote({
   return (
     <div style={pageStyle}>
       <div>
-        <PageHeader sectionLabel="A NOTE BEFORE YOU READ" title="From the Report Team" />
+        <PageHeader sectionLabel="A NOTE BEFORE YOU READ" title="From the U.S.DEGREES Team" />
 
         <div
           style={{

@@ -98,9 +98,10 @@ export interface C1LitePayload {
       size_category: string | null;
     };
     tuition: {
-      // Estimated average price after student aid (costs.sticker_price_by_api).
+      // Published sticker price (costs.sticker_price_by_api).
       sticker_price: number | null;
-      // Net price before estimated financial aid calculations (costs.for_roi_data).
+      // Net price at the student's household-income bracket, from
+      // net_price_public_income / net_price_private_income by school type.
       net_price: number | null;
       tuition_in_state: number | null;
       tuition_out_state: number | null;
@@ -180,9 +181,10 @@ BRANCHES:
 - reach_flag_schools: supportive framing — admission would rest on non-test strengths,
   first year may be more demanding, early support helps. Never discourage.
 - If student.sat_score is null, omit fit scores and say once that no SAT was provided.
-- income_bracket_label null → describe net price as the posted figure, not personalized.
-- net_price_bracket null but sticker_price present → cite sticker_price instead, labeled as the
-  sticker price (never call it "net price"). Only say cost is "not published" when BOTH are null.
+- net_price_bracket is the student's net price for their household income bracket
+  (student.income_bracket_label). It is the ONLY figure you may call "net price".
+- net_price_bracket null → say net price is not published for that school. Never substitute
+  sticker_price for it and never call sticker_price "net price".
 
 IDENTITY: the same college may appear more than once in "schools" when the family compared
 it under different programs. Always use each school entry's exact "display_name" string
@@ -193,8 +195,9 @@ WRITE ONLY THESE (lengths are ceilings):
 - two_minute_lines: exactly one per school, in payload order. Strongest cost-or-outcomes
   fact + one counterweight fact + a page reference. Both facts payload values. Never two
   positives or two negatives. Label the program_earnings figure as "Program Earnings from
-  LEHD data" (not "program earnings" and not a bare vintage year). Call the cost figure
-  "Net price" — never "Sticker price", whichever payload field it came from. ≤40 words each.
+  LEHD data" (not "program earnings" and not a bare vintage year). Use net_price_bracket,
+  called "Net price", as the cost figure (never sticker_price); if it is null, say net price is
+  not published. ≤40 words each.
 - critical_finding: name any merit-flag school, any reach-flag school, the highest
   program_earnings school with the earnings range, the cost range, and any school whose
   fit is "Not applicable". Nothing else. ≤110 words.
@@ -271,20 +274,12 @@ function money(v: number | null): string {
     : "not published";
 }
 
-// The two-minute read's cost clause: personalized net price when an income
-// bracket was posted, else the sticker price actually on file (costs.
-// sticker_price_by_api) — "not published" only when BOTH are null. Net price
-// requires an income bracket (routes/report.ts doesn't collect one yet — see
-// reportPayload.service.ts), so without this fallback every report cited
-// "Net price not published" even when a real sticker price existed.
+// The two-minute read's cost clause: the student's income-bracket net price
+// (net_price_public_income / net_price_private_income), or "not published".
+// Sticker price is never substituted for it.
 function costClause(s: C1LitePayload["schools"][number]): string {
   if (s.net_price_bracket != null) {
     return `Net price ${money(s.net_price_bracket)}${s.net_price_vintage ? ` (${s.net_price_vintage})` : ""}`;
-  }
-  if (s.sticker_price != null) {
-    // Labelled "Net price" per the report's cost vocabulary — the underlying
-    // field name (sticker_price) is the API's, not the reader's.
-    return `Net price ${money(s.sticker_price)}${s.sticker_vintage ? ` (${s.sticker_vintage})` : ""}`;
   }
   return "Net price not published";
 }
@@ -326,7 +321,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
 
   const net_price_note = student.income_bracket_label
     ? `Net price below reflects the ${student.income_bracket_label} income bracket. ${derived_flags.cost_range_low && derived_flags.cost_range_high ? `Across the selected schools it ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.` : "Figures are not published for one or more schools."}`
-    : `No income bracket was provided, so net price below is the posted figure, not personalized. ${derived_flags.cost_range_low && derived_flags.cost_range_high ? `Across the selected schools it ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.` : ""}`;
+    : "No household income range was provided, so net price is not published.";
 
   const studentSat = student.sat_score;
   const fit_sentences = schools.map((s) => {
@@ -359,7 +354,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
       : "");
 
   // debt_income_ratio is derived in reportPayload.service as typical debt
-  // divided by program earnings — the same value the Section 03 table shows —
+  // divided by program earnings — the same value the Section 04 table shows —
   // so the paragraph describes the calculation instead of quoting the
   // reported federal label.
   const debt_burden_paragraph = schools

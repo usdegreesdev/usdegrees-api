@@ -39,7 +39,7 @@ export function RecommendationFit({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 04 · ACADEMIC FIT"
+          sectionLabel="SECTION 05 · ACADEMIC FIT"
           title="Academic Fit by School"
         />
 
@@ -150,7 +150,7 @@ export function RecommendationQuestion({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 05 · THE DECISION"
+          sectionLabel="SECTION 09 · THE DECISION"
           title="The Decision Ahead"
         />
 

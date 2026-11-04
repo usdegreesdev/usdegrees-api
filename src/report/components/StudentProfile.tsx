@@ -30,7 +30,7 @@ export default function StudentProfile({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 02 · STUDENT PROFILE & NET PRICE"
+          sectionLabel="SECTION 03 · STUDENT PROFILE & NET PRICE"
           title="Student Profile & Net Price"
         />
 
@@ -95,6 +95,14 @@ export default function StudentProfile({
                 <span style={{ color: theme.color.inkMuted }}>SAT Score: </span>
                 <strong style={{ color: theme.color.ink }}>
                   {student.sat_score ?? "Not provided"}
+                </strong>
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <span style={{ color: theme.color.inkMuted }}>
+                  Family income:{" "}
+                </span>
+                <strong style={{ color: theme.color.ink }}>
+                  {student.income_bracket_label ?? "Not provided"}
                 </strong>
               </div>
             </div>
@@ -246,8 +254,8 @@ export default function StudentProfile({
                     color: theme.color.inkMuted,
                   }}
                 >
-                  {s.sticker_price != null
-                    ? `$${s.sticker_price.toLocaleString()}`
+                  {s.net_price_bracket != null
+                    ? `$${s.net_price_bracket.toLocaleString()}`
                     : "Not published"}
                 </td>
                 <td

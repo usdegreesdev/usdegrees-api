@@ -46,31 +46,26 @@ export default function ReportDocument({
         pageNumber={2}
         {...chrome}
       />
+      <SourcesMethodology payload={payload} pageNumber={3} {...chrome} />
       <ExecutiveSummary
-        payload={payload}
-        narrative={narrative}
-        pageNumber={3}
-        {...chrome}
-      />
-      <StudentProfile
         payload={payload}
         narrative={narrative}
         pageNumber={4}
         {...chrome}
       />
-      <CareerOutcomes
+      <StudentProfile
         payload={payload}
         narrative={narrative}
         pageNumber={5}
         {...chrome}
       />
-      <RecommendationFit
+      <CareerOutcomes
         payload={payload}
         narrative={narrative}
         pageNumber={6}
         {...chrome}
       />
-      <RecommendationQuestion
+      <RecommendationFit
         payload={payload}
         narrative={narrative}
         pageNumber={7}
@@ -79,7 +74,12 @@ export default function ReportDocument({
       <CampusStudents payload={payload} pageNumber={8} {...chrome} />
       <Athletics payload={payload} pageNumber={9} {...chrome} />
       <TuitionCosts payload={payload} pageNumber={10} {...chrome} />
-      <SourcesMethodology payload={payload} pageNumber={11} {...chrome} />
+      <RecommendationQuestion
+        payload={payload}
+        narrative={narrative}
+        pageNumber={11}
+        {...chrome}
+      />
       <Methodology payload={payload} pageNumber={12} {...chrome} />
     </div>
   );

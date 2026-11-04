@@ -15,24 +15,6 @@ function money(v: number | null): string {
   return v != null ? `$${v.toLocaleString()}` : "Not published";
 }
 
-type Tuition = C1LitePayload["college_details"][number]["tuition"];
-
-// True when any cost component in the row is "Not published".
-function hasUnpublished(t: Tuition): boolean {
-  return [
-    t.sticker_price,
-    t.net_price,
-    t.tuition_in_state,
-    t.tuition_out_state,
-    t.room_board_on_campus,
-    t.room_board_off_campus,
-    t.books_supply,
-    t.other_expense_on_campus,
-    t.other_expense_off_campus,
-    t.other_expense_with_family,
-  ].some((v) => v == null);
-}
-
 /**
  * One row per unique college (payload.college_details is already deduped by
  * unitid) — the full sticker/tuition/living-cost breakdown is school-level,
@@ -46,12 +28,54 @@ export default function TuitionCosts({
   totalPages,
 }: TuitionCostsProps) {
   const { college_details } = payload;
-  // One or two colleges leave most of the page empty at the default density,
-  // so the table is scaled up and given breathing room inside each cell.
-  // Three or more keep the compact sizing that lets eleven columns fit.
+  // Few colleges leave the page mostly empty, so rows get extra breathing room.
   const roomy = college_details.length <= 2;
-  const cellPad = roomy ? "12px 10px" : "6px";
-  const tableFont = roomy ? "12.5px" : "10.5px";
+  const cellPad = roomy ? "12px 6px" : "6px";
+  const tableFont = "10.5px";
+
+  const th = (align: "left" | "right" = "right"): React.CSSProperties => ({
+    padding: cellPad,
+    fontWeight: 600,
+    textAlign: align,
+  });
+  const td: React.CSSProperties = {
+    padding: cellPad,
+    textAlign: "right",
+    color: theme.color.ink,
+  };
+  const tableStyle: React.CSSProperties = {
+    width: "100%",
+    borderCollapse: "collapse",
+    fontSize: tableFont,
+    border: `1px solid ${theme.color.hairline}`,
+  };
+  const headRow: React.CSSProperties = {
+    backgroundColor: theme.color.navy,
+    color: theme.color.white,
+    textAlign: "left",
+  };
+  const bodyRow = (i: number): React.CSSProperties => ({
+    borderBottom: `1px solid ${theme.color.hairline}`,
+    backgroundColor: i % 2 === 0 ? theme.color.panelBgAlt : theme.color.panelBg,
+  });
+  const nameCell: React.CSSProperties = {
+    padding: cellPad,
+    fontWeight: 700,
+    color: theme.color.navy,
+  };
+  const subHeading: React.CSSProperties = {
+    fontSize: "13px",
+    fontWeight: 700,
+    color: theme.color.navy,
+    margin: "0 0 10px 0",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+  const note: React.CSSProperties = {
+    fontSize: "10px",
+    lineHeight: "1.5",
+    color: theme.color.inkMuted,
+  };
 
   return (
     <div style={pageStyle}>
@@ -69,148 +93,84 @@ export default function TuitionCosts({
             margin: "0 0 20px 0",
           }}
         >
-          Posted sticker price and cost-of-attendance components, as reported to
-          IPEDS. These are published figures, not the student's personalized net
-          price (see Section 02).
+          Tuition and cost-of-attendance components as reported to IPEDS, and
+          the net price for your household income range
+          {payload.student.income_bracket_label
+            ? ` (${payload.student.income_bracket_label})`
+            : ""}
+          .
         </p>
 
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            fontSize: tableFont,
-            marginBottom: "24px",
-            border: `1px solid ${theme.color.hairline}`,
-          }}
-        >
+        {/* Table 1 — cost components */}
+        <h3 style={subHeading}>Cost Components</h3>
+        <table style={{ ...tableStyle, marginBottom: "28px" }}>
           <thead>
-            <tr
-              style={{
-                backgroundColor: theme.color.navy,
-                color: theme.color.white,
-                textAlign: "left",
-              }}
-            >
-              <th style={{ padding: cellPad, fontWeight: 600 }}>College</th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Net Price (Avg)
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Sticker Price
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Tuition (In-State)
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Tuition (Out-of-State)
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Room & Board (On-Campus)
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Room & Board (Off-Campus)
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Books & Supplies
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Other Expense (On-Campus)
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Other Expense (Off-Campus)
-              </th>
-              <th style={{ padding: cellPad, fontWeight: 600, textAlign: "right" }}>
-                Other Expense (With Family)
-              </th>
+            <tr style={headRow}>
+              <th style={th("left")}>College</th>
+              <th style={th()}>Tuition (In-State)</th>
+              <th style={th()}>Tuition (Out-of-State)</th>
+              <th style={th()}>Room & Board (On-Campus)</th>
+              <th style={th()}>Room & Board (Off-Campus)</th>
+              <th style={th()}>Books & Supplies</th>
+              <th style={th()}>Other Expense (On-Campus)</th>
+              <th style={th()}>Other Expense (Off-Campus)</th>
+              <th style={th()}>Other Expense (With Family)</th>
             </tr>
           </thead>
           <tbody>
             {college_details.map((c, i) => (
-              <tr
-                key={c.unitid}
-                style={{
-                  borderBottom: `1px solid ${theme.color.hairline}`,
-                  backgroundColor:
-                    i % 2 === 0 ? theme.color.panelBgAlt : theme.color.panelBg,
-                }}
-              >
-                <td
-                  style={{
-                    padding: cellPad,
-                    fontWeight: 700,
-                    color: theme.color.navy,
-                  }}
-                >
-                  {c.name}
-                </td>
-                <td
-                  style={{
-                    padding: cellPad,
-                    textAlign: "right",
-                    color: theme.color.navy,
-                    fontWeight: 700,
-                  }}
-                >
-                  {money(c.tuition.sticker_price)}
-                  {hasUnpublished(c.tuition) ? " *" : ""}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
+              <tr key={c.unitid} style={bodyRow(i)}>
+                <td style={nameCell}>{c.name}</td>
+                <td style={td}>{money(c.tuition.tuition_in_state)}</td>
+                <td style={td}>{money(c.tuition.tuition_out_state)}</td>
+                <td style={td}>{money(c.tuition.room_board_on_campus)}</td>
+                <td style={td}>{money(c.tuition.room_board_off_campus)}</td>
+                <td style={td}>{money(c.tuition.books_supply)}</td>
+                <td style={td}>{money(c.tuition.other_expense_on_campus)}</td>
+                <td style={td}>{money(c.tuition.other_expense_off_campus)}</td>
+                <td style={td}>{money(c.tuition.other_expense_with_family)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Table 2 — sticker vs. income-based net price */}
+        <h3 style={subHeading}>Sticker Price & Net Price</h3>
+        <table style={{ ...tableStyle, marginBottom: "16px" }}>
+          <thead>
+            <tr style={headRow}>
+              <th style={th("left")}>College</th>
+              <th style={th()}>Sticker Price (In-State On-Campus) </th>
+              <th style={th()}>Net Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {college_details.map((c, i) => (
+              <tr key={c.unitid} style={bodyRow(i)}>
+                <td style={nameCell}>{c.name}</td>
+                <td style={td}>{money(c.tuition.sticker_price)}</td>
+                <td style={{ ...td, color: theme.color.navy, fontWeight: 700 }}>
                   {money(c.tuition.net_price)}
-                  {hasUnpublished(c.tuition) ? " *" : ""}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
-                  {money(c.tuition.tuition_in_state)}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
-                  {money(c.tuition.tuition_out_state)}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
-                  {money(c.tuition.room_board_on_campus)}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
-                  {money(c.tuition.room_board_off_campus)}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
-                  {money(c.tuition.books_supply)}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
-                  {money(c.tuition.other_expense_on_campus)}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
-                  {money(c.tuition.other_expense_off_campus)}
-                </td>
-                <td style={{ padding: cellPad, textAlign: "right", color: theme.color.ink }}>
-                  {money(c.tuition.other_expense_with_family)}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
 
-        <p
-          style={{
-            fontSize: "10px",
-            lineHeight: "1.5",
-            color: theme.color.inkMuted,
-            margin: 0,
-          }}
-        >
-          Net Price is the estimated average price after student aid. Sticker Price is the figure on file before estimated financial-aid
-          calculations.
+        <p style={{ ...note, margin: 0 }}>
+          Sticker Price is the published price before financial aid. Net Price
+          is the average annual price after grants and scholarships for
+          students in your household income range, taken from the U.S.
+          Department of Education's College Scorecard API (October 2026
+          update), which reports net price by income bracket for each school.
+          It shows “Not published” when the school reports no figure for your
+          bracket.
         </p>
-        {college_details.some((c) => hasUnpublished(c.tuition)) && (
-          <p
-            style={{
-              fontSize: "10px",
-              lineHeight: "1.5",
-              color: theme.color.inkMuted,
-              margin: "8px 0 0 0",
-            }}
-          >
-            * If any value is marked “Not Published,” the net price and sticker
-            price are estimates and may vary from the actual cost of attendance.
-          </p>
-        )}
+        <p style={{ ...note, fontStyle: "italic", margin: "8px 0 0 0" }}>
+          Net Price is an estimate only, based on income-range averages rather
+          than your individual aid offer. For more accurate details, visit the
+          admissions or financial aid office of the respective university.
+        </p>
       </div>
 
       <PageFooter

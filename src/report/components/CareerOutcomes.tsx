@@ -41,7 +41,7 @@ export default function CareerOutcomes({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 03 · EARNINGS & DEBT"
+          sectionLabel="SECTION 04 · EARNINGS & DEBT"
           title="Program Earnings & Typical Debt"
         />
 

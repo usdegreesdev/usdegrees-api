@@ -26,7 +26,7 @@ export default function ExecutiveSummary({
   return (
     <div style={pageStyle}>
       <div>
-        <PageHeader sectionLabel="SECTION 01 · EXECUTIVE SUMMARY" title="Executive Summary" />
+        <PageHeader sectionLabel="SECTION 02 · EXECUTIVE SUMMARY" title="Executive Summary" />
 
         {/* Narrative Grid */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "16px", marginBottom: "22px" }}>

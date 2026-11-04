@@ -159,9 +159,8 @@ router.post(
       const { reportReferenceId, createdAt } =
         await createPendingReport(userId);
 
-      // NOTE: no income bracket is captured anywhere in intake yet (no
-      // column on usdusers, no field on this request). Net price renders as
-      // the posted (non-personalized) figure until intake captures it.
+      // incomeBracket null → the payload builder reads the student's
+      // usdusers.household_income_range for net price.
       const result = await generateC1LiteReport({
         userId,
         reportReferenceId,

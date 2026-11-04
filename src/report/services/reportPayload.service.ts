@@ -27,7 +27,7 @@ import { getEarningsForProgram } from "../../services/earnings.service";
 import { getAthleticsProfile } from "../../services/athletics.service";
 
 // ---- vintage constants (no DB columns yet) -----------------------
-const NET_PRICE_VINTAGE = "2023–24 Scorecard";
+const NET_PRICE_VINTAGE = "College Scorecard, October 2026 update";
 const ADMISSIONS_VINTAGE = "IPEDS";
 
 // ---- income bracket -> net-price column --------------------------
@@ -253,7 +253,8 @@ async function fetchDebt(unitid: number) {
 async function fetchStudent(userId: number) {
   const { rows } = await pool.query(
     `SELECT display_name, email, address, gpa, sat_score, sat_math, sat_reading_writing, act_score,
-            graduation_year, high_school_name, preferred_degree_level, preferred_college_type
+            graduation_year, high_school_name, preferred_degree_level, preferred_college_type,
+            household_income_range
        FROM usdusers WHERE id = $1 LIMIT 1`,
     [userId],
   );
@@ -332,19 +333,28 @@ async function fetchCampus(unitid: number) {
 // per-program into schools[].sticker_price; repeated here for the dedicated
 // Tuition & Costs page so it doesn't depend on which program entry rendered.
 // ------------------------------------------------------------------
-async function fetchTuitionDetail(unitid: number) {
-  const { rows } = await pool.query(
-    `SELECT sticker_price_by_api, for_roi_data, tuition_in_state, tuition_out_state,
+async function fetchTuitionDetail(
+  unitid: number,
+  bracket: IncomeBracket | null,
+) {
+  // net_price comes from net_price_public_income / net_price_private_income
+  // at the student's household-income bracket (null when no bracket is set
+  // or the school has no row), never from the costs table.
+  const [{ rows }, np] = await Promise.all([
+    pool.query(
+    `SELECT sticker_price_by_api, tuition_in_state, tuition_out_state,
             roomboard_oncampus, roomboard_offcampus, booksupply, otherexpense_oncampus,
             otherexpense_offcampus, otherexpense_withfamily
        FROM costs WHERE unitid = $1 LIMIT 1`,
     [unitid],
-  );
+    ),
+    fetchNetPriceAndSector(unitid, bracket),
+  ]);
   const data = rows[0];
   const num = (v: unknown) => (v != null ? Math.round(Number(v)) : null);
   return {
     sticker_price: num(data?.sticker_price_by_api),
-    net_price: num(data?.for_roi_data),
+    net_price: num(np.value),
     tuition_in_state: num(data?.tuition_in_state),
     tuition_out_state: num(data?.tuition_out_state),
     room_board_on_campus: num(data?.roomboard_oncampus),
@@ -373,7 +383,7 @@ function computeDerivedFlags(
       reach.push(s.display_name);
   }
   const costs = schools
-    .map((s) => s.net_price_bracket ?? s.sticker_price)
+    .map((s) => s.net_price_bracket)
     .filter((v): v is number => v != null);
   const earns = schools
     .map((s) => s.program_earnings)
@@ -417,12 +427,21 @@ export async function buildC1LitePayload(args: {
   incomeBracket: IncomeBracket | null;
   methodologyVersion?: string;
 }): Promise<C1LitePayload> {
-  const { userId, reportReferenceId, incomeBracket } = args;
+  const { userId, reportReferenceId } = args;
 
   const [student, meta] = await Promise.all([
     fetchStudent(userId),
     fetchReportMeta(reportReferenceId),
   ]);
+
+  // An explicit bracket wins; otherwise use the income range the student
+  // entered on their profile (usdusers.household_income_range).
+  const incomeBracket: IncomeBracket | null =
+    args.incomeBracket ??
+    (student.household_income_range &&
+    student.household_income_range in BRACKET_TO_COLUMN
+      ? (student.household_income_range as IncomeBracket)
+      : null);
 
   const studentTotalSat =
     student.sat_score ??
@@ -594,7 +613,7 @@ export async function buildC1LitePayload(args: {
       const core = schoolCache.get(unitid) ?? (await fetchSchool(unitid));
       const [campus, tuition, athletics] = await Promise.all([
         fetchCampus(unitid),
-        fetchTuitionDetail(unitid),
+        fetchTuitionDetail(unitid, incomeBracket),
         getAthleticsProfile(unitid),
       ]);
       return {
