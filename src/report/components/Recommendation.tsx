@@ -2,6 +2,7 @@ import React from "react";
 import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
+import { QuestionsTable } from "./QuestionsTable";
 
 export interface RecommendationProps {
   payload: C1LitePayload;
@@ -188,6 +189,8 @@ export function RecommendationQuestion({
             {narrative.plain_english_question}
           </p>
         </div>
+
+        <QuestionsTable />
       </div>
 
       <PageFooter
