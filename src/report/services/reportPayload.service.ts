@@ -25,6 +25,7 @@ import { analyzeRoi } from "../utils/roi";
 import CREDENTIAL_LEVELS from "../../constants/credentials";
 import { getEarningsForProgram } from "../../services/earnings.service";
 import { getAthleticsProfile } from "../../services/athletics.service";
+import { loadSatPositioning } from "./satPositioning.service";
 
 // ---- vintage constants (no DB columns yet) -----------------------
 const NET_PRICE_VINTAGE = "College Scorecard, October 2026 update";
@@ -342,7 +343,7 @@ async function fetchTuitionDetail(
   // or the school has no row), never from the costs table.
   const [{ rows }, np] = await Promise.all([
     pool.query(
-    `SELECT sticker_price_by_api, tuition_in_state, tuition_out_state,
+    `SELECT for_roi_data, outstate_offcampus, tuition_in_state, tuition_out_state,
             roomboard_oncampus, roomboard_offcampus, booksupply, otherexpense_oncampus,
             otherexpense_offcampus, otherexpense_withfamily
        FROM costs WHERE unitid = $1 LIMIT 1`,
@@ -353,7 +354,8 @@ async function fetchTuitionDetail(
   const data = rows[0];
   const num = (v: unknown) => (v != null ? Math.round(Number(v)) : null);
   return {
-    sticker_price: num(data?.sticker_price_by_api),
+    sticker_price: num(data?.for_roi_data),
+    sticker_price_out_state_off_campus: num(data?.outstate_offcampus),
     net_price: num(np.value),
     tuition_in_state: num(data?.tuition_in_state),
     tuition_out_state: num(data?.tuition_out_state),
@@ -630,6 +632,14 @@ export async function buildC1LitePayload(args: {
     }),
   );
 
+  // SAT positioning: deterministic, this user's score vs this report's
+  // colleges. usdreport_colleges isn't written until after the PDF is
+  // generated, so the ordered input list stands in while the report is pending.
+  const sat_positioning = await loadSatPositioning({
+    reportReferenceId,
+    pendingUnitids: args.schools.map((s) => s.unitid),
+  });
+
   return {
     report_meta: {
       report_reference_id: meta.report_reference_id,
@@ -664,5 +674,6 @@ export async function buildC1LitePayload(args: {
     schools: out,
     derived_flags: computeDerivedFlags(studentTotalSat, out, roi20YrByName),
     college_details,
+    sat_positioning,
   };
 }

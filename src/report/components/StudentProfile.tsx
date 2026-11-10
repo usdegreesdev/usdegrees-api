@@ -235,6 +235,15 @@ export default function StudentProfile({
                   }}
                 >
                   {s.name}
+                  <div
+                    style={{
+                      fontSize: "9px",
+                      fontWeight: 600,
+                      color: theme.color.inkMuted,
+                    }}
+                  >
+                    Unit ID: {s.unitid}
+                  </div>
                   {s.program_name && (
                     <div
                       style={{

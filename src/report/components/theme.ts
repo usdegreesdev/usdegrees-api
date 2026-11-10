@@ -45,7 +45,33 @@ export const theme = {
     family: "Georgia, 'Times New Roman', system-ui, -apple-system, serif",
     // Sans stack for body/UI
     sans: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    mono: "ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace",
   },
+  // SAT score positioning section
+  sat: {
+    band: "#C7DDF7",
+    bandBorder: "#8DB4E2",
+    track: "#E6E9EF",
+    grid: "#E9E4D6",
+    marker: "#13234A",
+    markerText: "#FFFFFF",
+    stem: "#D4A23A",
+    above: "#115E59",
+    within: "#1E3A8A",
+    below: "#9A3412",
+    neutral: "#5B6472",
+  },
+  // Disclosure badge palettes, keyed by admission_disclosure_categories.badge_color.
+  // Unknown colors fall back to `neutral`.
+  badge: {
+    green: { fg: "#2F5D3F", bg: "#E4F0E6", border: "#9CC3A6" },
+    teal: { fg: "#0F5F63", bg: "#DDF0F0", border: "#8CC5C7" },
+    slate_blue_gray: { fg: "#3F4B63", bg: "#E5E9F1", border: "#A9B3C7" },
+    amber_outline: { fg: "#8A5A22", bg: "#FFFFFF", border: "#D9A441" },
+    coral: { fg: "#9A3F2E", bg: "#FBE6E0", border: "#E3A494" },
+    gray: { fg: "#5B6472", bg: "#EEF0F3", border: "#C3C8D1" },
+    neutral: { fg: "#5B6472", bg: "#EEF0F3", border: "#C3C8D1" },
+  } as Record<string, { fg: string; bg: string; border: string }>,
 };
 
 export type Theme = typeof theme;

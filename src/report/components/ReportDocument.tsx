@@ -4,10 +4,11 @@ import AnalystNote from "./AnalystNote";
 import ExecutiveSummary from "./ExecutiveSummary";
 import StudentProfile from "./StudentProfile";
 import CareerOutcomes from "./CareerOutcomes";
-import { RecommendationFit, RecommendationQuestion } from "./Recommendation";
+import { RecommendationQuestion } from "./Recommendation";
 import CampusStudents from "./CampusStudents";
 import Athletics from "./Athletics";
 import TuitionCosts from "./TuitionCosts";
+import SatPositioning, { satPositioningPageCount } from "./SatPositioning";
 import SourcesMethodology from "./SourcesMethodology";
 import Methodology from "./Methodology";
 import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
@@ -28,8 +29,10 @@ export default function ReportDocument({
   logoDataUri,
 }: ReportDocumentProps) {
   // Cover is page 1 (no chrome); the remaining pages share the same footer
-  // numbering. Total includes every rendered page, Cover included.
-  const totalPages = 12;
+  // numbering. Total includes every rendered page, Cover included. The SAT
+  // section paginates by content (satPages); every later page is offset by it.
+  const satPages = satPositioningPageCount(payload.sat_positioning);
+  const totalPages = 11 + satPages;
   const chrome = { reportId, generatedDate, totalPages };
 
   return (
@@ -65,22 +68,23 @@ export default function ReportDocument({
         pageNumber={6}
         {...chrome}
       />
-      <RecommendationFit
+      <SatPositioning
         payload={payload}
-        narrative={narrative}
-        pageNumber={7}
-        {...chrome}
+        reportId={reportId}
+        generatedDate={generatedDate}
+        firstPageNumber={7}
+        totalPages={totalPages}
       />
-      <CampusStudents payload={payload} pageNumber={8} {...chrome} />
-      <Athletics payload={payload} pageNumber={9} {...chrome} />
-      <TuitionCosts payload={payload} pageNumber={10} {...chrome} />
+      <CampusStudents payload={payload} pageNumber={7 + satPages} {...chrome} />
+      <Athletics payload={payload} pageNumber={8 + satPages} {...chrome} />
+      <TuitionCosts payload={payload} pageNumber={9 + satPages} {...chrome} />
       <RecommendationQuestion
         payload={payload}
         narrative={narrative}
-        pageNumber={11}
+        pageNumber={10 + satPages}
         {...chrome}
       />
-      <Methodology payload={payload} pageNumber={12} {...chrome} />
+      <Methodology payload={payload} pageNumber={11 + satPages} {...chrome} />
     </div>
   );
 }

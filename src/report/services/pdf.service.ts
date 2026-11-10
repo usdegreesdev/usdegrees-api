@@ -5,6 +5,8 @@ import puppeteerCore, { Browser } from "puppeteer-core";
 import * as path from "path";
 import * as fs from "fs";
 import ReportDocument from "../components/ReportDocument";
+import { renderSatSectionHtml } from "../components/SatPositioning";
+import { gateSatRenderedNumbers } from "./satPositioningGates";
 import type { C1LitePayload, C1LiteNarrative } from "./reportPrompt";
 
 /**
@@ -89,6 +91,15 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<Bu
   });
   const bodyHtml = ReactDOMServer.renderToStaticMarkup(element);
 
+  // Gate 6: the SAT section must not print a number that isn't in the payload.
+  const satErrors = gateSatRenderedNumbers(
+    renderSatSectionHtml(payload.sat_positioning),
+    payload.sat_positioning,
+  );
+  if (satErrors.length) {
+    throw new Error(`SAT positioning render gate failed: ${satErrors.join("; ")}`);
+  }
+
   // 2. Wrap it in a clean HTML document shell with proper print-specific resets
   const fullHtml = `
 <!DOCTYPE html>
@@ -128,6 +139,11 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<Bu
 </html>
   `;
 
+  return printHtmlToPdf(fullHtml, reportId);
+}
+
+/** Prints a complete HTML document to an in-memory A4 PDF (backgrounds on). */
+export async function printHtmlToPdf(fullHtml: string, reportId: string): Promise<Buffer> {
   // 3. Puppeteer generation — rendered straight into memory (no `path`
   // option), so nothing touches disk.
   console.log(`Starting Puppeteer PDF rendering for report ID ${reportId}...`);

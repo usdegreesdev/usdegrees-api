@@ -13,6 +13,8 @@
  */
 
 import type { AthleticsProfile } from "../../types/athletics";
+import type { SatPositioning } from "./satPositioning";
+import { gateSatNarrative, runSatGates } from "./satPositioningGates";
 
 // ---------------- PAYLOAD (built by reportPayload.service) ----------------
 export interface C1LitePayload {
@@ -98,8 +100,10 @@ export interface C1LitePayload {
       size_category: string | null;
     };
     tuition: {
-      // Published sticker price (costs.sticker_price_by_api).
+      // Sticker price (costs.for_roi_data).
       sticker_price: number | null;
+      // Sticker price, out-of-state off-campus (costs.outstate_offcampus).
+      sticker_price_out_state_off_campus: number | null;
       // Net price at the student's household-income bracket, from
       // net_price_public_income / net_price_private_income by school type.
       net_price: number | null;
@@ -114,6 +118,9 @@ export interface C1LitePayload {
     };
     athletics: AthleticsProfile | null;
   }>;
+  // SAT score positioning (computed in TypeScript — see satPositioning.ts).
+  // The model must not generate or rewrite any number in this block.
+  sat_positioning: SatPositioning;
 }
 
 // ---------------- NARRATIVE (what Gemini returns) ----------------
@@ -449,5 +456,7 @@ export function runGates(n: C1LiteNarrative, payload: C1LitePayload): string[] {
     ...gateBannedVocab(n).map((x) => `Banned word: ${x}`),
     ...gateNeutrality(n),
     ...gateBranchConsistency(n, payload),
+    ...gateSatNarrative(n, payload),
+    ...runSatGates(payload),
   ];
 }

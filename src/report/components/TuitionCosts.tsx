@@ -140,17 +140,26 @@ export default function TuitionCosts({
           <thead>
             <tr style={headRow}>
               <th style={th("left")}>College</th>
-              <th style={th()}>Sticker Price (In-State On-Campus) </th>
               <th style={th()}>Net Price</th>
+              <th style={th()}>Sticker Price (In-State On-Campus)</th>
+              <th style={th()}>Sticker Price (Out-State Off-Campus)</th>
             </tr>
           </thead>
           <tbody>
             {college_details.map((c, i) => (
               <tr key={c.unitid} style={bodyRow(i)}>
-                <td style={nameCell}>{c.name}</td>
-                <td style={td}>{money(c.tuition.sticker_price)}</td>
+                <td style={nameCell}>
+                  {c.name}{" "}
+                  <span style={{ fontWeight: 400, color: theme.color.ink }}>
+                    Unitid - {c.unitid}
+                  </span>
+                </td>
                 <td style={{ ...td, color: theme.color.navy, fontWeight: 700 }}>
                   {money(c.tuition.net_price)}
+                </td>
+                <td style={td}>{money(c.tuition.sticker_price)}</td>
+                <td style={td}>
+                  {money(c.tuition.sticker_price_out_state_off_campus)}
                 </td>
               </tr>
             ))}
