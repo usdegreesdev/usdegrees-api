@@ -1,259 +1,349 @@
 import React from "react";
 import type { C1LitePayload } from "../services/reportPrompt";
-import { theme } from "./theme";
+import { buildCoverModel, COVER_COPY } from "./coverData";
 
 export interface CoverProps {
   payload: C1LitePayload;
   reportId: string;
   generatedDate: string;
+  /** Logo WITHOUT its own tagline (public/images/coverlogo.png). */
   logoDataUri: string;
 }
 
-export default function Cover({
-  payload,
-  reportId,
-  generatedDate,
-  logoDataUri,
-}: CoverProps) {
-  const { student, schools } = payload;
+// Cover-only palette (brand sheet). Deliberately neutral: no good/bad colors.
+const C = {
+  navy: "#16213A",
+  gold: "#D4AF5A",
+  lightOnNavy: "#DCE1EA",
+  greyOnWhite: "#4A5468",
+  cardBorder: "#CBD2DE",
+  red: "#D7262B",
+  white: "#FFFFFF",
+};
+const SERIF = "'Fraunces', Georgia, serif";
+const SANS = "'DM Sans', system-ui, sans-serif";
+
+const label: React.CSSProperties = {
+  fontSize: "11px",
+  fontWeight: 600,
+  letterSpacing: "0.22em",
+  textTransform: "uppercase",
+};
+
+export default function Cover({ payload, reportId, logoDataUri }: CoverProps) {
+  const m = buildCoverModel(payload, reportId);
+
+  const detail = (
+    title: string,
+    main: string,
+    sub: string | null,
+    mono = false,
+  ) => (
+    <div>
+      <div
+        style={{
+          ...label,
+          fontSize: "10.5px",
+          color: C.gold,
+          marginBottom: "8px",
+        }}
+      >
+        {title}
+      </div>
+      <div
+        style={{
+          fontSize: "16px",
+          fontWeight: 600,
+          color: C.white,
+          letterSpacing: mono ? "0.02em" : 0,
+        }}
+      >
+        {main}
+      </div>
+      {sub && (
+        <div
+          style={{
+            fontSize: "13.5px",
+            lineHeight: 1.4,
+            color: C.lightOnNavy,
+            marginTop: "4px",
+          }}
+        >
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div
       style={{
         width: "210mm",
         height: "297mm",
-        padding: "25mm 20mm 20mm 20mm",
         boxSizing: "border-box",
-        backgroundColor: theme.color.coverBg,
-        color: theme.color.white,
-        fontFamily: theme.font.sans,
         display: "flex",
         flexDirection: "column",
-        justifyContent: "space-between",
+        fontFamily: SANS,
         pageBreakAfter: "always",
-        position: "relative",
+        overflow: "hidden",
+        backgroundColor: C.white,
       }}
     >
-      {/* Corner ribbon — hangs from the true top-left of the page, ignoring
-          the page padding, so it reads as a tucked-in banner rather than an
-          inline logo. */}
-      <img
-        src={logoDataUri}
-        alt="U.S. Degrees"
-        style={{
-          position: "absolute",
-          top: 0,
-          left: "30px",
-          width: "108px",
-          height: "auto",
-        }}
-      />
-
-      {/* Top Header Section */}
-      <div>
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        {/* ---------------- LEFT: navy panel (496 : 320) ---------------- */}
         <div
           style={{
+            flex: "496 1 0",
+            minWidth: 0,
+            backgroundColor: C.navy,
+            color: C.white,
+            padding: "56px 28px 44px 48px",
             display: "flex",
-            justifyContent: "flex-end",
-            alignItems: "center",
+            flexDirection: "column",
+            boxSizing: "border-box",
           }}
         >
           <div
             style={{
-              fontSize: "11px",
+              alignSelf: "flex-start",
+              border: `1px solid ${C.gold}`,
+              color: C.gold,
+              fontSize: "10.5px",
+              fontWeight: 500,
+              letterSpacing: "0.16em",
+              padding: "9px 14px",
+            }}
+          >
+            {m.banner}
+          </div>
+
+          <div style={{ ...label, color: C.gold, marginTop: "96px" }}>
+            {COVER_COPY.kicker}
+          </div>
+
+          <h1
+            style={{
+              fontFamily: SERIF,
+              fontSize: "52px",
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              whiteSpace: "nowrap",
+              color: C.white,
+              margin: "24px 0 0 0",
+            }}
+          >
+            <span style={{ fontWeight: 600, display: "block" }}>
+              {m.headline[0]}
+            </span>
+            <span
+              style={{ fontWeight: 400, fontStyle: "italic", display: "block" }}
+            >
+              {m.headline[1]}
+            </span>
+          </h1>
+
+          <p
+            style={{
+              fontSize: "17px",
+              lineHeight: 1.6,
+              fontWeight: 400,
+              color: C.lightOnNavy,
+              margin: "32px 0 0 0",
+              maxWidth: "400px",
+            }}
+          >
+            {COVER_COPY.description}
+          </p>
+          <p
+            style={{
+              fontSize: "17px",
               fontWeight: 600,
-              color: theme.color.inkFaint,
-              letterSpacing: "0.1em",
-              paddingBottom: "4px",
-              borderBottom: `1px solid ${theme.color.hairlineOnNavy}`,
+              color: C.white,
+              margin: "20px 0 0 0",
             }}
           >
-            CONFIDENTIAL REPORT
-          </div>
-        </div>
-      </div>
+            {COVER_COPY.lenderLine}
+          </p>
 
-      {/* Middle Hero Section */}
-      <div
-        style={{
-          flexGrow: 1,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          paddingBottom: "40px",
-        }}
-      >
-        <div
-          style={{
-            fontSize: "12px",
-            fontWeight: 700,
-            color: theme.color.gold,
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-            marginBottom: "10px",
-          }}
-        >
-          U.S. Degrees · College Decision Report
-        </div>
-        <div
-          style={{
-            fontSize: "11px",
-            color: theme.color.inkFaint,
-            letterSpacing: "0.04em",
-            marginBottom: "18px",
-          }}
-        >
-          Prepared for {student.display_name} · {schools.length} Program
-          {schools.length === 1 ? "" : "s"} Compared
-        </div>
-        <h1
-          style={{
-            fontFamily: theme.font.family,
-            fontSize: "48px",
-            fontWeight: 800,
-            lineHeight: "1.1",
-            letterSpacing: "-0.02em",
-            color: theme.color.white,
-            margin: "0 0 25px 0",
-          }}
-        >
-          U.S. Degrees Decision Report
-        </h1>
-        <p
-          style={{
-            fontSize: "18px",
-            color: theme.color.inkFaint,
-            fontWeight: 400,
-            lineHeight: "1.5",
-            margin: "0 0 50px 0",
-            maxWidth: "550px",
-          }}
-        >
-          A neutral, data-driven look at cost and outcomes across the schools
-          you selected. This report does not rank or recommend a school — it
-          lays out what the public data shows so your family can weigh the
-          trade-offs.
-        </p>
+          <div style={{ flexGrow: 1 }} />
 
-        {/* Selected Colleges Panel */}
-        <div
-          style={{
-            backgroundColor: theme.color.navyDeep,
-            borderRadius: "16px",
-            padding: "24px",
-            border: `1px solid ${theme.color.hairlineOnNavy}`,
-          }}
-        >
           <div
             style={{
-              fontSize: "11px",
-              fontWeight: 700,
-              color: theme.color.gold,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              marginBottom: "12px",
+              height: "1px",
+              backgroundColor: C.gold,
+              marginBottom: "28px",
+            }}
+          />
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              columnGap: "32px",
+              rowGap: "28px",
             }}
           >
-            Programs Evaluated
+            {detail("PREPARED FOR", m.studentName, m.cityState)}
+            {detail(
+              "DATA LAST CHECKED",
+              m.dataChecked,
+              COVER_COPY.dataCheckedNote,
+            )}
+            {detail(
+              "REPORT ID",
+              m.reportId,
+              `Revision ${m.revision} · Method ${m.methodVersion}`,
+              true,
+            )}
+          </div>
+        </div>
+
+        {/* ---------------- RIGHT: white panel ---------------- */}
+        <div
+          style={{
+            flex: "320 1 0",
+            minWidth: 0,
+            padding: "64px 40px 40px 40px",
+            display: "flex",
+            flexDirection: "column",
+            boxSizing: "border-box",
+            backgroundColor: C.white,
+          }}
+        >
+          <img
+            src={logoDataUri}
+            alt="U.S. Degrees"
+            style={{ width: "100%", height: "auto", display: "block" }}
+          />
+          <div
+            style={{
+              ...label,
+              fontSize: "11px",
+              letterSpacing: "0.2em",
+              color: C.navy,
+              marginTop: "20px",
+            }}
+          >
+            {COVER_COPY.tagline}
           </div>
           <div
-            style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+            style={{
+              fontSize: "15px",
+              fontWeight: 600,
+              color: C.red,
+              marginTop: "18px",
+            }}
           >
-            {schools.map((s, i) => (
+            {COVER_COPY.website}
+          </div>
+
+          <div
+            style={{
+              ...label,
+              fontSize: "10.5px",
+              color: C.navy,
+              marginTop: "72px",
+            }}
+          >
+            {COVER_COPY.schoolsLabel}
+          </div>
+          <div
+            style={{
+              fontSize: "12.5px",
+              lineHeight: 1.45,
+              color: C.greyOnWhite,
+              marginTop: "8px",
+            }}
+          >
+            {COVER_COPY.schoolsNote}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              marginTop: "16px",
+            }}
+          >
+            {m.schools.map((s, i) => (
               <div
                 key={i}
-                style={{ display: "flex", alignItems: "center", gap: "12px" }}
+                style={{
+                  border: `1px solid ${C.cardBorder}`,
+                  borderRadius: "8px",
+                  padding: "14px 16px",
+                  breakInside: "avoid",
+                }}
               >
-                <span
-                  style={{
-                    color: theme.color.gold,
-                    fontSize: "18px",
-                    fontWeight: "bold",
-                  }}
-                >
-                  •
-                </span>
-                <span
+                <div
                   style={{
                     fontSize: "15px",
                     fontWeight: 600,
-                    color: theme.color.white,
+                    color: C.navy,
+                    lineHeight: 1.3,
                   }}
                 >
                   {s.name}
-                  {s.program_name ? ` — ${s.program_name}` : ""}
-                </span>
-                <span style={{ fontSize: "13px", color: theme.color.inkFaint }}>
-                  ({s.city}, {s.state})
-                </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "12.5px",
+                    color: C.greyOnWhite,
+                    marginTop: "3px",
+                  }}
+                >
+                  {s.location}
+                </div>
               </div>
             ))}
+          </div>
+
+          <div style={{ flexGrow: 1 }} />
+          <div
+            style={{
+              fontSize: "11.5px",
+              lineHeight: 1.5,
+              color: C.greyOnWhite,
+            }}
+          >
+            {COVER_COPY.sourceLine}
           </div>
         </div>
       </div>
 
-      {/* Bottom Footer Section */}
-      <div>
-        <div
+      {/* ---------------- Footer band (48px) ---------------- */}
+      <div
+        style={{
+          height: "48px",
+          flex: "0 0 48px",
+          backgroundColor: C.gold,
+          color: C.navy,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 32px",
+        }}
+      >
+        <span
           style={{
-            width: "100%",
-            height: "1px",
-            backgroundColor: theme.color.hairlineOnNavy,
-            marginBottom: "20px",
-          }}
-        ></div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: "20px",
-            fontSize: "12px",
-            color: theme.color.inkFaint,
+            ...label,
+            fontSize: "10.5px",
+            fontWeight: 600,
+            letterSpacing: "0.2em",
           }}
         >
-          <div>
-            <div
-              style={{
-                fontWeight: 700,
-                color: theme.color.goldSoft,
-                marginBottom: "4px",
-              }}
-            >
-              Prepared For
-            </div>
-            <div>{student.display_name}</div>
-            {student.address && <div>{student.address}</div>}
-            {student.preferred_degree_level && (
-              <div>Preferred level: {student.preferred_degree_level}</div>
-            )}
-          </div>
-          <div>
-            <div
-              style={{
-                fontWeight: 700,
-                color: theme.color.goldSoft,
-                marginBottom: "4px",
-              }}
-            >
-              Report Reference
-            </div>
-            <div>ID: {reportId}</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                fontWeight: 700,
-                color: theme.color.goldSoft,
-                marginBottom: "4px",
-              }}
-            >
-              Generated Date
-            </div>
-            <div>{generatedDate}</div>
-            <div style={{ color: theme.color.gold, fontWeight: 600 }}>
-              Sources Documented · Calculations Re-Checked
-            </div>
-          </div>
-        </div>
+          {COVER_COPY.confidential}
+        </span>
+        <span
+          style={{
+            fontFamily: SERIF,
+            fontStyle: "italic",
+            fontWeight: 400,
+            fontSize: "15px",
+          }}
+        >
+          {COVER_COPY.footerTagline}
+        </span>
       </div>
     </div>
   );

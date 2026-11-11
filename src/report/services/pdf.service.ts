@@ -5,6 +5,8 @@ import puppeteerCore, { Browser } from "puppeteer-core";
 import * as path from "path";
 import * as fs from "fs";
 import ReportDocument from "../components/ReportDocument";
+import Cover from "../components/Cover";
+import { buildCoverModel, validateCoverText } from "../components/coverData";
 import { renderSatSectionHtml } from "../components/SatPositioning";
 import { gateSatRenderedNumbers } from "./satPositioningGates";
 import type { C1LitePayload, C1LiteNarrative } from "./reportPrompt";
@@ -19,10 +21,87 @@ import type { C1LitePayload, C1LiteNarrative } from "./reportPrompt";
 let cachedLogoDataUri: string | null = null;
 function getLogoDataUri(): string {
   if (cachedLogoDataUri) return cachedLogoDataUri;
-  const logoPath = path.join(__dirname, "..", "..", "..", "public", "images", "reportlogo.png");
+  const logoPath = path.join(
+    __dirname,
+    "..",
+    "..",
+    "..",
+    "public",
+    "images",
+    "coverlogo.png",
+  );
   const base64 = fs.readFileSync(logoPath).toString("base64");
   cachedLogoDataUri = `data:image/png;base64,${base64}`;
   return cachedLogoDataUri;
+}
+
+/**
+ * Cover fonts (SIL OFL, from @fontsource): Fraunces 600 + 400 italic for the
+ * headline/footer line, DM Sans 400/500/600 for everything else. Inlined as
+ * base64 so Chromium embeds them in the PDF with no network access.
+ */
+const COVER_FONTS: Array<{
+  pkg: string;
+  file: string;
+  family: string;
+  weight: number;
+  style: string;
+}> = [
+  {
+    pkg: "fraunces",
+    file: "fraunces-latin-600-normal.woff2",
+    family: "Fraunces",
+    weight: 600,
+    style: "normal",
+  },
+  {
+    pkg: "fraunces",
+    file: "fraunces-latin-400-italic.woff2",
+    family: "Fraunces",
+    weight: 400,
+    style: "italic",
+  },
+  {
+    pkg: "dm-sans",
+    file: "dm-sans-latin-400-normal.woff2",
+    family: "DM Sans",
+    weight: 400,
+    style: "normal",
+  },
+  {
+    pkg: "dm-sans",
+    file: "dm-sans-latin-500-normal.woff2",
+    family: "DM Sans",
+    weight: 500,
+    style: "normal",
+  },
+  {
+    pkg: "dm-sans",
+    file: "dm-sans-latin-600-normal.woff2",
+    family: "DM Sans",
+    weight: 600,
+    style: "normal",
+  },
+];
+let cachedFontCss: string | null = null;
+function getCoverFontCss(): string {
+  if (cachedFontCss) return cachedFontCss;
+  cachedFontCss = COVER_FONTS.map((f) => {
+    const file = path.join(
+      __dirname,
+      "..",
+      "..",
+      "..",
+      "node_modules",
+      "@fontsource",
+      f.pkg,
+      "files",
+      f.file,
+    );
+    const b64 = fs.readFileSync(file).toString("base64");
+    return `@font-face { font-family: '${f.family}'; font-weight: ${f.weight}; font-style: ${f.style}; font-display: block; src: url(data:font/woff2;base64,${b64}) format('woff2'); }`;
+  }).join("\n");
+  return cachedFontCss;
 }
 
 /**
@@ -78,7 +157,9 @@ export function getReportPdfPath(fileName: string): string {
  * source of truth for report downloads; pdf_storage_path only still matters
  * for pre-migration legacy rows.
  */
-export async function generateReportPdf(options: GeneratePdfOptions): Promise<Buffer> {
+export async function generateReportPdf(
+  options: GeneratePdfOptions,
+): Promise<Buffer> {
   const { payload, narrative, reportId, generatedDate } = options;
 
   // 1. Render the React component tree to static HTML markup
@@ -91,13 +172,34 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<Bu
   });
   const bodyHtml = ReactDOMServer.renderToStaticMarkup(element);
 
+  // Cover gate: headline word == card count, no placeholders, website once.
+  const coverText = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Cover, {
+      payload,
+      reportId,
+      generatedDate,
+      logoDataUri: "",
+    }),
+  )
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&");
+  const coverErrors = validateCoverText(
+    buildCoverModel(payload, reportId),
+    coverText,
+  );
+  if (coverErrors.length) {
+    throw new Error(`Cover render gate failed: ${coverErrors.join("; ")}`);
+  }
+
   // Gate 6: the SAT section must not print a number that isn't in the payload.
   const satErrors = gateSatRenderedNumbers(
     renderSatSectionHtml(payload.sat_positioning),
     payload.sat_positioning,
   );
   if (satErrors.length) {
-    throw new Error(`SAT positioning render gate failed: ${satErrors.join("; ")}`);
+    throw new Error(
+      `SAT positioning render gate failed: ${satErrors.join("; ")}`,
+    );
   }
 
   // 2. Wrap it in a clean HTML document shell with proper print-specific resets
@@ -109,6 +211,7 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<Bu
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Decision Report - ${reportId}</title>
     <style>
+      ${getCoverFontCss()}
       @page {
         size: A4;
         margin: 0;
@@ -143,7 +246,10 @@ export async function generateReportPdf(options: GeneratePdfOptions): Promise<Bu
 }
 
 /** Prints a complete HTML document to an in-memory A4 PDF (backgrounds on). */
-export async function printHtmlToPdf(fullHtml: string, reportId: string): Promise<Buffer> {
+export async function printHtmlToPdf(
+  fullHtml: string,
+  reportId: string,
+): Promise<Buffer> {
   // 3. Puppeteer generation — rendered straight into memory (no `path`
   // option), so nothing touches disk.
   console.log(`Starting Puppeteer PDF rendering for report ID ${reportId}...`);
@@ -161,6 +267,7 @@ export async function printHtmlToPdf(fullHtml: string, reportId: string): Promis
 
     // Load content and wait for network/styles to settle
     await page.setContent(fullHtml, { waitUntil: "load" });
+    await page.evaluate(() => document.fonts.ready);
 
     // Print A4 PDF into a buffer
     const pdfUint8Array = await page.pdf({
@@ -170,7 +277,9 @@ export async function printHtmlToPdf(fullHtml: string, reportId: string): Promis
     });
     const pdfBuffer = Buffer.from(pdfUint8Array);
 
-    console.log(`PDF successfully generated in memory for report ID ${reportId} (${pdfBuffer.length} bytes)`);
+    console.log(
+      `PDF successfully generated in memory for report ID ${reportId} (${pdfBuffer.length} bytes)`,
+    );
     return pdfBuffer;
   } finally {
     await browser.close();
