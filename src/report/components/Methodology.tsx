@@ -7,6 +7,7 @@ import {
   debtRatioDefinitions,
   debtRatioRefreshed,
 } from "../utils/debtRatio";
+import { missingFiguresMethodology } from "../utils/missingValue";
 
 export interface MethodologyProps {
   payload: C1LitePayload;
@@ -78,6 +79,12 @@ export default function Methodology({
               </div>
               <div>
                 <strong>• Debt-to-Income Ratio:</strong> {debtRatioMethodology()}
+              </div>
+              <div>
+                <strong>Missing figures</strong>
+                <div style={{ marginTop: "4px" }}>
+                  {missingFiguresMethodology(payload?.federal_aid_fetched_on)}
+                </div>
               </div>
               <div>
                 <strong>How to read the debt-to-income figures</strong>

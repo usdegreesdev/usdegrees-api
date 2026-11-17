@@ -80,10 +80,6 @@ export interface C1LitePayload {
     merit_flag_schools: string[];        // student SAT > school sat_75
     reach_flag_schools: string[];        // student SAT < school sat_25
     best_roi_school: string;             // "" if roi not stored
-    cost_range_low: string;              // min net_price_bracket across set
-    cost_range_high: string;
-    earnings_range_low: string;
-    earnings_range_high: string;
   };
 }
 
@@ -146,15 +142,14 @@ GENERATED-NARRATIVE RULES:
    cost-or-outcomes fact + one counterweight fact + a page reference. Both facts must be
    payload values. Never two positives or two negatives. ≤ 40 words each.
 2. critical_finding — name: any merit-flag school (SAT over 75th pct); any reach-flag
-   school; the school with the highest program_earnings and the earnings_range across the
-   set; the cost_range across the set; and any school whose fit is "Not applicable" due to
+   school; and any school whose fit is "Not applicable" due to
    its disclosure category. Nothing else. ≤ 110 words.
-3. net_price_note — one paragraph stating the cost_range_low/high and, if present, the
+3. net_price_note — one paragraph stating, if present, the
    student's bracket label. Describe, don't advise. ≤ 90 words.
 4. fit_sentences — one per school: bands (if present), disclosure copy, and merit/reach
    framing per the branches above. ≤ 45 words each.
 5. earnings_paragraph — describe program_earnings per school with vintage + method flag,
-   and the earnings_range. If best_roi_school is non-empty, state its roi_ratio factually.
+   If best_roi_school is non-empty, state its roi_ratio factually.
    No school ranked as "best." ≤ 90 words.
 6. plain_english_question — one framing paragraph: with cost and outcomes on the table,
    the question is which cost-and-value structure the family can carry. ≤ 90 words.

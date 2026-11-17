@@ -2,6 +2,12 @@ import React from "react";
 import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
+import NoAidBox from "./NoAidBox";
+import {
+  schoolFigures,
+  takesNoFederalAid,
+  TABLE_NOT_PUBLISHED,
+} from "../utils/missingValue";
 
 export interface StudentProfileProps {
   payload: C1LitePayload;
@@ -263,9 +269,11 @@ export default function StudentProfile({
                     color: theme.color.inkMuted,
                   }}
                 >
-                  {s.net_price_bracket != null
-                    ? `$${s.net_price_bracket.toLocaleString()}`
-                    : "Not published"}
+                  {(() => {
+                    const np = schoolFigures(s).net_price;
+                    if (np.value != null) return np.display;
+                    return takesNoFederalAid(s) ? <NoAidBox /> : TABLE_NOT_PUBLISHED;
+                  })()}
                 </td>
                 <td
                   style={{

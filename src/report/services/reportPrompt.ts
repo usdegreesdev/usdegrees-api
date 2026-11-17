@@ -20,6 +20,11 @@ import {
   isSubmittedOnlyCategory,
 } from "../config/satPositioning.config";
 import { formatDebtIncomeRatio, DEBT_RATIO_BASIS } from "../utils/debtRatio";
+import {
+  schoolFigures,
+  type FigureCompleteness,
+  type SchoolFigures,
+} from "../utils/missingValue";
 
 // ---------------- PAYLOAD (built by reportPayload.service) ----------------
 export interface C1LitePayload {
@@ -71,6 +76,9 @@ export interface C1LitePayload {
     // aggregated across the school's programs (see reportPayload.service.ts
     // fetchProgramEarnings); null when nothing is publishable.
     earnings_vintage: number | string | null;
+    // First-year (1 year after graduation) earnings and its cohort year, for
+    // the page-4 context line. Null when not published.
+    earnings_year_1?: number | null; earnings_year_1_vintage?: number | null;
     earnings_method_flag: string | null; roi_ratio: string | null;
     sticker_price: number | null; sticker_vintage: string | null;
     avg_debt: number | null; debt_income_ratio: number | null;
@@ -79,13 +87,19 @@ export interface C1LitePayload {
     // label for that point in time (from DEBT_RATIO_BASIS).
     debt_income_earnings: number | null; debt_income_basis_label: string;
     debt_income_earnings_fetched_on: string | null;
+    // 'no_federal_aid' | 'participates' | 'unknown' (no row). Unknown is
+    // treated like 'participates' (generic "not published" reason).
+    federal_aid_status?: string;
+    // Value-or-reason per metric (see utils/missingValue.ts). Use as given.
+    figures?: SchoolFigures;
   }>;
+  // How many schools have a published figure for each metric.
+  figure_completeness?: FigureCompleteness;
+  // Latest school_federal_aid_status.fetched_on among the report's schools.
+  federal_aid_fetched_on?: string | null;
   derived_flags: {
     merit_flag_schools: string[]; reach_flag_schools: string[];
     best_roi_school: string;
-    cost_range_low: string; cost_range_high: string;
-    earnings_range_low: string; earnings_range_high: string;
-    debt_range_low: string; debt_range_high: string;
   };
   // College-level detail (NOT program-specific) — exactly one entry per
   // unique unitid, even when that college appears multiple times in
@@ -209,6 +223,14 @@ BRANCHES:
 - net_price_bracket null → say net price is not published for that school. Never substitute
   sticker_price for it and never call sticker_price "net price".
 
+MISSING FIGURES: each school has figures.net_price, figures.program_earnings and
+figures.typical_debt, each with a "display" string that is either the value or the reason it is
+missing. Use those display strings as given. Never compute or describe a range, lowest/highest
+or spread of net price, program earnings or typical debt across schools. Never describe a
+missing figure as $0. Never say why a value is missing except with the reason strings
+supplied in figures. figure_completeness gives how many schools have each figure; use it as
+given.
+
 IDENTITY: the same college may appear more than once in "schools" when the family compared
 it under different programs. Always use each school entry's exact "display_name" string
 (not "name") as the "school" value in two_minute_lines and fit_sentences — display_name is
@@ -221,17 +243,16 @@ WRITE ONLY THESE (lengths are ceilings):
   LEHD data" (not "program earnings" and not a bare vintage year). Use net_price_bracket,
   called "Net price", as the cost figure (never sticker_price); if it is null, say net price is
   not published. ≤40 words each.
-- critical_finding: name any merit-flag school, any reach-flag school, the highest
-  program_earnings school with the earnings range, the cost range, and any school whose
+- critical_finding: name any merit-flag school, any reach-flag school, and any school whose
   fit is "Not applicable". Nothing else. ≤110 words.
-- net_price_note: state cost_range_low/high and the bracket label if present. ≤90 words.
+- net_price_note: state the bracket label if present. ≤90 words.
 - fit_sentences: one per school — bands if present, disclosure copy, merit/reach framing, and
   the Admission Fit Estimate disclaimer (see BRANCHES). ≤70 words each.
 - earnings_paragraph: program_earnings per school with its method label (e.g. Census-reported)
-  and the earnings range. Do NOT state the earnings vintage year here — the figure and its
+  (or its figures.program_earnings.display when missing). Do NOT state the earnings vintage year here — the figure and its
   method flag only. No "best". ≤90 words.
 - debt_burden_paragraph: state each school's avg_debt (typical debt at completion) and its
-  debt_income_ratio, plus the debt range. debt_income_ratio is supplied as data and is already
+  debt_income_ratio (use figures.typical_debt.display for the debt). debt_income_ratio is supplied as data and is already
   calculated: the school's typical debt (avg_debt) divided by the school's
   median earnings ${DEBT_RATIO_BASIS.label} (debt_income_basis_label; College Scorecard,
   students who received federal aid; the earnings figure is debt_income_earnings). It
@@ -309,7 +330,7 @@ function costClause(s: C1LitePayload["schools"][number]): string {
   if (s.net_price_bracket != null) {
     return `Net price ${money(s.net_price_bracket)}${s.net_price_vintage ? ` (${s.net_price_vintage})` : ""}`;
   }
-  return "Net price not published";
+  return `Net price ${schoolFigures(s).net_price.display}`;
 }
 
 export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative {
@@ -336,12 +357,6 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
   if (naSubmitted.length) {
     findingParts.push(`${FIT_NA_SUBMITTED_REASON} (${naSubmitted.join(", ")}).`);
   }
-  if (derived_flags.earnings_range_low && derived_flags.earnings_range_high) {
-    findingParts.push(`Program earnings across the selected schools range from ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`);
-  }
-  if (derived_flags.cost_range_low && derived_flags.cost_range_high) {
-    findingParts.push(`Net Price ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.`);
-  }
   const critical_finding = findingParts.length
     ? findingParts.join(" ")
     : "No merit, reach, or fit-unavailable flags apply to the selected schools; see the cost and earnings tables for figures.";
@@ -353,7 +368,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
   const analyst_note = `This report evaluates ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures. Most figures come directly from public federal datasets. Where Census PSEO program earnings data is unavailable, clearly labelled estimates may be generated using real reported earnings and program-level trends, rather than the raw dataset alone. Estimates are never chained from other estimates and are not presented as official Census-published figures. Where a figure is not published and no valid real-data anchor exists, it is shown as "Not Published" rather than substituted with an estimate or typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
 
   const net_price_note = student.income_bracket_label
-    ? `Net price below reflects the ${student.income_bracket_label} income bracket. ${derived_flags.cost_range_low && derived_flags.cost_range_high ? `Across the selected schools it ranges from ${money(Number(derived_flags.cost_range_low))} to ${money(Number(derived_flags.cost_range_high))}.` : "Figures are not published for one or more schools."}`
+    ? `Net price below reflects the ${student.income_bracket_label} income bracket.`
     : "No household income range was provided, so net price is not published.";
 
   const studentSat = student.sat_score;
@@ -383,19 +398,18 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
   const earnings_paragraph = schools
     // Earnings vintage year is deliberately omitted here; only the method flag
     // (e.g. Census-reported) is surfaced next to the figure.
-    .map((s) => `${s.display_name}: ${money(s.program_earnings)}${s.earnings_method_flag ? ` (${s.earnings_method_flag})` : ""}.`)
-    .join(" ") + (derived_flags.earnings_range_low && derived_flags.earnings_range_high
-      ? ` Range across selected schools: ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`
-      : "");
+    .map((s) => {
+      const f = schoolFigures(s).program_earnings;
+      return `${s.display_name}: ${f.display}${f.value != null && s.earnings_method_flag ? ` (${s.earnings_method_flag})` : ""}.`;
+    })
+    .join(" ");
 
   // debt_income_ratio is the payload value (typical debt ÷ school median
   // earnings at DEBT_RATIO_BASIS) — the same value the Section 04 table shows.
   // Never recomputed here.
   const debt_burden_paragraph = schools
-    .map((s) => `${s.display_name}: typical debt ${money(s.avg_debt)}, debt-to-income ratio ${formatDebtIncomeRatio(s.debt_income_ratio)}${s.debt_income_ratio != null ? ` (typical debt ÷ school median earnings ${s.debt_income_basis_label ?? DEBT_RATIO_BASIS.label})` : ""}.`)
-    .join(" ") + (derived_flags.debt_range_low && derived_flags.debt_range_high
-      ? ` Range across selected schools: ${money(Number(derived_flags.debt_range_low))} to ${money(Number(derived_flags.debt_range_high))}.`
-      : "") + " The ratio describes the whole school, not the program shown, and is not comparable to the program-level Median Earnings (Yr 10).";
+    .map((s) => `${s.display_name}: typical debt ${schoolFigures(s).typical_debt.display}, debt-to-income ratio ${formatDebtIncomeRatio(s.debt_income_ratio)}${s.debt_income_ratio != null ? ` (typical debt ÷ school median earnings ${s.debt_income_basis_label ?? DEBT_RATIO_BASIS.label})` : ""}.`)
+    .join(" ") + " The ratio describes the whole school, not the program shown, and is not comparable to the program-level Median Earnings (Yr 10).";
 
   const plain_english_question = `With net price, admissions fit, program earnings, and School level typical debt on the table for ${schools.map((s) => s.display_name).join(", ")}, the question for your family is which cost-and-value structure you can carry — not which school ranks highest.`;
 

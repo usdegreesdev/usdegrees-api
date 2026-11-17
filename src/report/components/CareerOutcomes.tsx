@@ -3,6 +3,13 @@ import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 
+import NoAidBox from "./NoAidBox";
+import {
+  schoolFigures,
+  takesNoFederalAid,
+  TABLE_NOT_PUBLISHED,
+  TYPICAL_DEBT_FOOTNOTE,
+} from "../utils/missingValue";
 import {
   formatDebtIncomeRatio,
   debtRatioDisclaimer,
@@ -180,9 +187,11 @@ export default function CareerOutcomes({
                     color: theme.color.ink,
                   }}
                 >
-                  {s.avg_debt != null
-                    ? `$${s.avg_debt.toLocaleString()}${s.avg_debt === 0 ? " *" : ""}`
-                    : "Not published"}
+                  {(() => {
+                    const td = schoolFigures(s).typical_debt;
+                    if (td.value != null) return td.display;
+                    return takesNoFederalAid(s) ? <NoAidBox /> : TABLE_NOT_PUBLISHED;
+                  })()}
                 </td>
                 {(() => {
                   const ratio = formatDebtIncomeRatio(s.debt_income_ratio);
@@ -220,21 +229,16 @@ export default function CareerOutcomes({
           {debtRatioDisclaimer()}
         </p>
 
-        {schools.some((s) => s.avg_debt === 0) && (
-          <p
-            style={{
-              fontSize: "10px",
-              lineHeight: "1.5",
-              color: theme.color.inkMuted,
-              margin: "-12px 0 12px 0",
-            }}
-          >
-            * A typical debt value of $0 may indicate that the college does not
-            offer financial aid or that the actual reported student debt is
-            zero. For further details, please contact the college’s admissions
-            office.
-          </p>
-        )}
+        <p
+          style={{
+            fontSize: "10px",
+            lineHeight: "1.5",
+            color: theme.color.inkMuted,
+            margin: "-12px 0 12px 0",
+          }}
+        >
+          {TYPICAL_DEBT_FOOTNOTE}
+        </p>
 
         {/* Earnings method footnotes — vintage years are deliberately omitted;
             only the method flag (e.g. Census-reported) is surfaced. Schools with
