@@ -1,6 +1,7 @@
 import React from "react";
 import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
+import { STICKER_FOOTNOTE, type StickerScenario } from "../utils/stickerPrice";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 
 export interface TuitionCostsProps {
@@ -9,6 +10,18 @@ export interface TuitionCostsProps {
   generatedDate: string;
   pageNumber: number;
   totalPages: number;
+}
+
+function Scenario({ s }: { s: StickerScenario }) {
+  if (s.published) return <>{money(s.total)}</>;
+  return (
+    <>
+      Not published
+      <div style={{ fontSize: "8.5px", fontWeight: 400, color: theme.color.inkMuted }}>
+        missing: {s.missing.join(", ")}
+      </div>
+    </>
+  );
 }
 
 function money(v: number | null): string {
@@ -30,8 +43,10 @@ export default function TuitionCosts({
   const { college_details } = payload;
   // Few colleges leave the page mostly empty, so rows get extra breathing room.
   const roomy = college_details.length <= 2;
-  const cellPad = roomy ? "12px 6px" : "6px";
-  const tableFont = "10.5px";
+  // 5+ colleges would overflow the page, so tighten rows/columns a little.
+  const compact = college_details.length >= 5;
+  const cellPad = roomy ? "12px 6px" : compact ? "3px 4px" : "6px";
+  const tableFont = compact ? "9px" : "10.5px";
 
   const th = (align: "left" | "right" = "right"): React.CSSProperties => ({
     padding: cellPad,
@@ -72,8 +87,8 @@ export default function TuitionCosts({
     letterSpacing: "0.05em",
   };
   const note: React.CSSProperties = {
-    fontSize: "10px",
-    lineHeight: "1.5",
+    fontSize: compact ? "9px" : "10px",
+    lineHeight: compact ? "1.4" : "1.5",
     color: theme.color.inkMuted,
   };
 
@@ -90,7 +105,7 @@ export default function TuitionCosts({
             fontSize: "11.5px",
             lineHeight: "1.6",
             color: theme.color.ink,
-            margin: "0 0 20px 0",
+            margin: compact ? "0 0 12px 0" : "0 0 20px 0",
           }}
         >
           Tuition and cost-of-attendance components as reported to IPEDS, and
@@ -103,7 +118,7 @@ export default function TuitionCosts({
 
         {/* Table 1 — cost components */}
         <h3 style={subHeading}>Cost Components</h3>
-        <table style={{ ...tableStyle, marginBottom: "28px" }}>
+        <table style={{ ...tableStyle, marginBottom: compact ? "16px" : "28px" }}>
           <thead>
             <tr style={headRow}>
               <th style={th("left")}>College</th>
@@ -141,8 +156,9 @@ export default function TuitionCosts({
             <tr style={headRow}>
               <th style={th("left")}>College</th>
               <th style={th()}>Net Price</th>
-              <th style={th()}>Sticker Price (In-State On-Campus)</th>
-              <th style={th()}>Sticker Price (Out-State Off-Campus)</th>
+              <th style={th()}>Sticker price: in-state, living on campus</th>
+              <th style={th()}>Sticker price: out-of-state, living off campus</th>
+              <th style={th()}>Scorecard average cost of attendance</th>
             </tr>
           </thead>
           <tbody>
@@ -157,9 +173,20 @@ export default function TuitionCosts({
                 <td style={{ ...td, color: theme.color.navy, fontWeight: 700 }}>
                   {money(c.tuition.net_price)}
                 </td>
-                <td style={td}>{money(c.tuition.sticker_price)}</td>
                 <td style={td}>
-                  {money(c.tuition.sticker_price_out_state_off_campus)}
+                  <Scenario s={c.tuition.sticker_in_state_on_campus} />
+                </td>
+                <td style={td}>
+                  <Scenario s={c.tuition.sticker_out_state_off_campus} />
+                </td>
+                <td style={td}>
+                  {money(c.tuition.scorecard_avg_coa)}
+                  {c.tuition.scorecard_avg_coa != null &&
+                  c.tuition.scorecard_avg_coa_year ? (
+                    <div style={{ fontSize: "8.5px", color: theme.color.inkMuted }}>
+                      {c.tuition.scorecard_avg_coa_year}
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -167,8 +194,10 @@ export default function TuitionCosts({
         </table>
 
         <p style={{ ...note, margin: 0 }}>
-          Sticker Price is the published price before financial aid. Net Price
-          is the average annual price after grants and scholarships for
+          {STICKER_FOOTNOTE}
+        </p>
+        <p style={{ ...note, margin: "8px 0 0 0" }}>
+          Net Price is the average annual price after grants and scholarships for
           students in your household income range, taken from the U.S.
           Department of Education's College Scorecard API (October 2026
           update), which reports net price by income bracket for each school.

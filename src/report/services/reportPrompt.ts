@@ -20,6 +20,7 @@ import {
   isSubmittedOnlyCategory,
 } from "../config/satPositioning.config";
 import { formatDebtIncomeRatio, DEBT_RATIO_BASIS } from "../utils/debtRatio";
+import { scenarioDisplay, type StickerScenario } from "../utils/stickerPrice";
 import {
   schoolFigures,
   type FigureCompleteness,
@@ -126,10 +127,14 @@ export interface C1LitePayload {
       size_category: string | null;
     };
     tuition: {
-      // Sticker price (costs.for_roi_data).
-      sticker_price: number | null;
-      // Sticker price, out-of-state off-campus (costs.outstate_offcampus).
-      sticker_price_out_state_off_campus: number | null;
+      // Sticker price scenarios, summed in code from the four components
+      // (utils/stickerPrice.ts). Not published + missing[] if any is null.
+      sticker_in_state_on_campus: StickerScenario;
+      sticker_out_state_off_campus: StickerScenario;
+      // College Scorecard's own average cost of attendance
+      // (costs.sticker_price_by_api) and its year (costs.sticker_price_year).
+      scorecard_avg_coa: number | null;
+      scorecard_avg_coa_year: string | null;
       // Net price at the student's household-income bracket, from
       // net_price_public_income / net_price_private_income by school type.
       net_price: number | null;
@@ -230,6 +235,14 @@ or spread of net price, program earnings or typical debt across schools. Never d
 missing figure as $0. Never say why a value is missing except with the reason strings
 supplied in figures. figure_completeness gives how many schools have each figure; use it as
 given.
+
+COST OF ATTENDANCE FIGURES: each entry in college_details has tuition.sticker_in_state_on_campus
+(one student paying in-state tuition and living on campus), tuition.sticker_out_state_off_campus
+(out-of-state tuition, living off campus) and tuition.scorecard_avg_coa (College Scorecard's average
+cost of attendance, year in scorecard_avg_coa_year). A scenario with published=false has no total
+and lists its missing components. Describe these only as given. Never call a scenario total
+"Scorecard's price" or "the Scorecard figure", never combine or compare the three figures or state
+a difference between them, and never describe a missing figure as $0.
 
 IDENTITY: the same college may appear more than once in "schools" when the family compared
 it under different programs. Always use each school entry's exact "display_name" string
@@ -333,6 +346,20 @@ function costClause(s: C1LitePayload["schools"][number]): string {
   return `Net price ${schoolFigures(s).net_price.display}`;
 }
 
+// Cost-of-attendance sentence for the fallback: each figure exactly as given,
+// labelled separately; no combining, comparing or differences.
+export function costOfAttendanceNote(payload: C1LitePayload): string {
+  const parts = (payload.college_details ?? []).map((c) => {
+    const t = c.tuition;
+    const sc =
+      t.scorecard_avg_coa != null
+        ? `$${t.scorecard_avg_coa.toLocaleString("en-US")}${t.scorecard_avg_coa_year ? ` (${t.scorecard_avg_coa_year})` : ""}`
+        : "not published";
+    return `${c.name}: sticker price for in-state tuition living on campus ${scenarioDisplay(t.sticker_in_state_on_campus)}; sticker price for out-of-state tuition living off campus ${scenarioDisplay(t.sticker_out_state_off_campus)}; College Scorecard average cost of attendance ${sc}.`;
+  });
+  return parts.length ? ` ${parts.join(" ")}` : "";
+}
+
 export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative {
   const { schools, derived_flags, student } = payload;
 
@@ -367,9 +394,11 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
 
   const analyst_note = `This report evaluates ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures. Most figures come directly from public federal datasets. Where Census PSEO program earnings data is unavailable, clearly labelled estimates may be generated using real reported earnings and program-level trends, rather than the raw dataset alone. Estimates are never chained from other estimates and are not presented as official Census-published figures. Where a figure is not published and no valid real-data anchor exists, it is shown as "Not Published" rather than substituted with an estimate or typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
 
-  const net_price_note = student.income_bracket_label
-    ? `Net price below reflects the ${student.income_bracket_label} income bracket.`
-    : "No household income range was provided, so net price is not published.";
+  const net_price_note =
+    (student.income_bracket_label
+      ? `Net price below reflects the ${student.income_bracket_label} income bracket.`
+      : "No household income range was provided, so net price is not published.") +
+    costOfAttendanceNote(payload);
 
   const studentSat = student.sat_score;
   const fit_sentences = schools.map((s) => {
