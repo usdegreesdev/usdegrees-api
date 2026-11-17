@@ -73,7 +73,8 @@ export default function Methodology({
                 <strong>• Admission Fit:</strong> Measures student academic
                 placement (GPA, SAT) compared to the middle 50% range of the
                 historical freshman cohort. Not applicable at open-admission,
-                test-not-used, or closed institutions.
+                test-not-used, test-optional or scores-considered-if-submitted,
+                or closed institutions.
               </div>
               <div>
                 <strong>• Debt-to-Income Ratio:</strong> {debtRatioMethodology()}

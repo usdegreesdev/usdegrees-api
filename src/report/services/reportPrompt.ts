@@ -15,6 +15,10 @@
 import type { AthleticsProfile } from "../../types/athletics";
 import type { SatPositioning } from "./satPositioning";
 import { gateSatNarrative, runSatGates } from "./satPositioningGates";
+import {
+  FIT_NA_SUBMITTED_REASON,
+  isSubmittedOnlyCategory,
+} from "../config/satPositioning.config";
 import { formatDebtIncomeRatio, DEBT_RATIO_BASIS } from "../utils/debtRatio";
 
 // ---------------- PAYLOAD (built by reportPayload.service) ----------------
@@ -183,6 +187,10 @@ BRANCHES:
 - If fit_label is "Not applicable", write "Academic Fit: Not applicable." followed by the
   disclosure.supporting_copy verbatim, explaining why a test-score-based fit classification
   cannot be calculated. Do not report a fit score.
+- If fit_label is "Not applicable" and sat_data_category is "H_TEST_CONSIDERED" or
+  "C_TEST_OPTIONAL", the reason is exactly: "Fit is not applicable: test scores are optional or
+  considered if submitted." Use it in place of any wording that implies open admission, then the
+  disclosure.supporting_copy verbatim. Never describe these schools as a fit, strong fit or stretch.
 - If fit_label starts with "Not shown", the student gave no SAT score: do not name any fit
   category (no "Target/Match" or "Reach"); say fit is not shown because no SAT score was provided.
 - There is no "Safety" tier — fit_label is only "Target/Match", "Reach", "Not applicable", or "Not shown – no SAT score provided".
@@ -319,9 +327,14 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
   if (derived_flags.reach_flag_schools.length) {
     findingParts.push(`Student's SAT is below the 25th percentile at ${derived_flags.reach_flag_schools.join(", ")}.`);
   }
-  const notApplicable = schools.filter((s) => s.fit_label === "Not applicable").map((s) => s.display_name);
+  const naSchools = schools.filter((s) => s.fit_label === "Not applicable");
+  const naSubmitted = naSchools.filter((s) => isSubmittedOnlyCategory(s.sat_data_category)).map((s) => s.display_name);
+  const notApplicable = naSchools.filter((s) => !isSubmittedOnlyCategory(s.sat_data_category)).map((s) => s.display_name);
   if (notApplicable.length) {
     findingParts.push(`Fit is not applicable at ${notApplicable.join(", ")}.`);
+  }
+  if (naSubmitted.length) {
+    findingParts.push(`${FIT_NA_SUBMITTED_REASON} (${naSubmitted.join(", ")}).`);
   }
   if (derived_flags.earnings_range_low && derived_flags.earnings_range_high) {
     findingParts.push(`Program earnings across the selected schools range from ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`);
@@ -348,7 +361,9 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     if (s.fit_label === "Not applicable") {
       return {
         school: s.display_name,
-        sentence: `Academic Fit: Not applicable. ${s.disclosure.supporting_copy}`,
+        sentence: isSubmittedOnlyCategory(s.sat_data_category)
+          ? `${FIT_NA_SUBMITTED_REASON}. ${s.disclosure.supporting_copy}`
+          : `Academic Fit: Not applicable. ${s.disclosure.supporting_copy}`,
       };
     }
     if (s.sat_25 == null || s.sat_75 == null || studentSat == null) {

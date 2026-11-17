@@ -82,9 +82,15 @@ test(
       assert.deepEqual(gateSatBlock(block), []);
       assert.deepEqual(gateSatCollegeSet(block, unitids), []);
       assert.deepEqual(gateSatQueries(), []);
-      // Charted rows are sorted strongest fit → biggest stretch
-      const deltas = block.charted.map((r) => r.midpointDelta);
-      assert.deepEqual([...deltas].sort((a, b) => b - a), deltas);
+      if (block.charted.some((r) => r.submittedOnly)) {
+        // Scores-considered / test-optional schools: no fit ranking, order entered
+        const orders = block.charted.map((r) => r.displayOrder);
+        assert.deepEqual([...orders].sort((a, b) => a - b), orders);
+      } else {
+        // Charted rows are sorted strongest fit → biggest stretch
+        const deltas = block.charted.map((r) => r.midpointDelta);
+        assert.deepEqual([...deltas].sort((a, b) => b - a), deltas);
+      }
 
       // Gate 6 on the rendered section
       assert.deepEqual(

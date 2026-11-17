@@ -27,6 +27,7 @@ import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 const COLS = "220px 1fr 180px";
 const TRACK_INSET = 20; // px, keeps the score pill inside the column at the axis ends
 const ROW_HEIGHT = 84;
+const COMPACT_ROW_HEIGHT = 76;
 
 const keepColors: React.CSSProperties = {
   WebkitPrintColorAdjust: "exact",
@@ -38,31 +39,77 @@ type Item =
   | { kind: "fallback"; row: SatFallbackRow }
   | { kind: "note" };
 
-const weightOf = (it: Item) =>
-  it.kind === "charted"
-    ? SAT_LAYOUT.chartedRowWeight
-    : it.kind === "fallback"
-      ? SAT_LAYOUT.fallbackRowWeight
-      : SAT_LAYOUT.noteWeight;
+/**
+ * Layout mode. `compact`: 4+ colleges where some carry copy (scores-considered
+ * or no-range) get tighter rows/copy. `hideChips`: with 5+ such colleges and a
+ * scores-considered school, the summary chips are dropped so it all fits.
+ */
+export function satLayoutMode(block: SatBlock): { compact: boolean; hideChips: boolean; noted: boolean } {
+  const n = block.charted.length + block.fallback.length;
+  const hasSub = block.charted.some((r) => r.submittedOnly);
+  const noted = hasSub || block.fallback.length > 0;
+  return { compact: noted && n >= 4, hideChips: hasSub && n >= 5, noted };
+}
+
+const textWeight = (texts: Array<string | null>, link: boolean, compact: boolean) => {
+  const L = compact ? SAT_LAYOUT.compact : SAT_LAYOUT;
+  // Compact copy flows supporting + disclaimer as one paragraph.
+  const parts = compact
+    ? [[texts[0], texts[1]].filter(Boolean).join(" "), texts[2]]
+    : texts;
+  const lines = parts
+    .filter((t): t is string => !!t)
+    .reduce((n, t) => n + Math.max(1, Math.ceil(t.length / L.notesLineChars)), 0);
+  return lines * L.notesLineWeight + L.notesPadWeight + (link ? L.notesLinkWeight : 0);
+};
+
+const weightOf = (it: Item, compact: boolean) => {
+  const L = compact ? SAT_LAYOUT.compact : SAT_LAYOUT;
+  if (it.kind === "charted")
+    return it.row.submittedOnly
+      ? L.chartedRowWeight +
+          textWeight([it.row.supportingCopy, it.row.disclaimerText, it.row.contactGuidance], false, compact)
+      : SAT_LAYOUT.chartedRowWeight;
+  if (it.kind === "fallback")
+    return (
+      L.fallbackHeaderWeight +
+      textWeight(
+        [it.row.supportingCopy, it.row.disclaimerText, it.row.contactGuidance],
+        !!it.row.websiteUrl,
+        compact,
+      )
+    );
+  return SAT_LAYOUT.noteWeight;
+};
 
 /** Split the section's rows across as many A4 pages as they need. */
 export function paginateSat(block: SatBlock): Item[][] {
   if (block.state === "no_student_score") return [[]];
+  const { compact, hideChips, noted } = satLayoutMode(block);
   const items: Item[] = [
     ...block.charted.map((row) => ({ kind: "charted" as const, row })),
     ...block.fallback.map((row) => ({ kind: "fallback" as const, row })),
   ];
   if (block.charted.length > 0) items.push({ kind: "note" });
+  const hasSubmitted = block.charted.some((r) => r.submittedOnly);
 
   const pages: Item[][] = [[]];
   let used = 0;
-  let cap: number = SAT_LAYOUT.firstPageCapacity;
+  // Rows carrying copy are weighed in measured px, so they use the calibrated
+  // capacities; plain chart-only sections keep the original ones.
+  let cap: number = noted
+    ? hideChips
+      ? SAT_LAYOUT.compact.firstPageCapacityNoChips
+      : SAT_LAYOUT.compact.firstPageCapacity
+    : SAT_LAYOUT.firstPageCapacity;
   for (const it of items) {
-    const w = weightOf(it);
+    const w =
+      weightOf(it, compact) +
+      (it.kind === "note" && hasSubmitted ? SAT_LAYOUT.submittedNoteExtraWeight : 0);
     if (used + w > cap && pages[pages.length - 1].length > 0) {
       pages.push([]);
       used = 0;
-      cap = SAT_LAYOUT.nextPageCapacity;
+      cap = noted ? SAT_LAYOUT.compact.nextPageCapacity : SAT_LAYOUT.nextPageCapacity;
     }
     pages[pages.length - 1].push(it);
     used += w;
@@ -185,15 +232,87 @@ function AxisRow({ axis }: { axis: SatAxis }) {
   );
 }
 
+/**
+ * Category copy under a school's row (submitted-only and no-range schools):
+ * supporting copy, disclaimer, then contact guidance last, on a tinted
+ * background so it is easy to pick out.
+ */
+function SchoolNotes({
+  supportingCopy,
+  disclaimerText,
+  contactGuidance,
+  websiteUrl,
+  compact = false,
+}: {
+  supportingCopy: string | null;
+  disclaimerText: string | null;
+  contactGuidance: string | null;
+  websiteUrl?: string | null;
+  compact?: boolean;
+}) {
+  const p: React.CSSProperties = {
+    fontSize: compact ? "9px" : "10px",
+    lineHeight: compact ? 1.3 : 1.4,
+    color: theme.color.ink,
+    margin: compact ? "0 0 2px 0" : "0 0 3px 0",
+  };
+  return (
+    <div
+      style={{
+        backgroundColor: theme.color.panelBg,
+        borderRadius: "6px",
+        padding: compact ? "4px 9px" : "6px 10px",
+        ...keepColors,
+      }}
+    >
+      {compact ? (
+        (supportingCopy || disclaimerText) && (
+          <p style={p}>
+            {supportingCopy}
+            {disclaimerText && (
+              <span style={{ color: theme.color.inkMuted }}> {disclaimerText}</span>
+            )}
+          </p>
+        )
+      ) : (
+        <>
+          {supportingCopy && <p style={p}>{supportingCopy}</p>}
+          {disclaimerText && (
+            <p style={{ ...p, color: theme.color.inkMuted }}>{disclaimerText}</p>
+          )}
+        </>
+      )}
+      {contactGuidance && (
+        <p style={{ ...p, fontWeight: 700, color: theme.color.navy, margin: 0 }}>
+          {contactGuidance}
+        </p>
+      )}
+      {websiteUrl && (
+        <p style={{ ...p, fontWeight: 700, margin: "2px 0 0 0" }}>
+          <a
+            href={websiteUrl}
+            style={{ color: theme.color.navy, textDecoration: "underline" }}
+          >
+            {satCopy.visit(websiteHost(websiteUrl))}
+          </a>
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ChartedRow({
   row,
   axis,
   score,
+  compact = false,
 }: {
   row: SatChartedRow;
   axis: SatAxis;
   score: number;
+  compact?: boolean;
 }) {
+  const ROW_H = compact && row.submittedOnly ? COMPACT_ROW_HEIGHT : ROW_HEIGHT;
   const color = statusColor[row.status];
   const scoreX = pctOf(axis, score);
   const bandL = pctOf(axis, row.p25);
@@ -201,16 +320,18 @@ function ChartedRow({
   const edgeX = row.status === "below" ? bandL : bandR;
   const connL = Math.min(scoreX, edgeX);
   const connW = Math.abs(scoreX - edgeX);
+  const sub = row.submittedOnly;
 
   return (
+    <div style={{ breakInside: "avoid", marginBottom: sub ? (compact ? "5px" : "8px") : undefined }}>
     <div
       style={{
         display: "grid",
         gridTemplateColumns: COLS,
         gap: "12px",
         alignItems: "center",
-        height: `${ROW_HEIGHT}px`,
-        marginBottom: "8px",
+        height: `${ROW_H}px`,
+        marginBottom: compact && sub ? "3px" : "8px",
         borderTop: `1px solid ${theme.color.hairline}`,
         breakInside: "avoid",
       }}
@@ -239,7 +360,7 @@ function ChartedRow({
         {row.badge && <BadgeTag badge={row.badge} />}
       </div>
 
-      <Inset height={ROW_HEIGHT - 8}>
+      <Inset height={ROW_H - 8}>
         {axis.ticks.map((t) => (
           <div
             key={t}
@@ -375,7 +496,9 @@ function ChartedRow({
           }}
         >
           <StatusIcon status={row.status} />
-          <span>{satCopy.verdict[row.status]}</span>
+          <span>
+            {(sub ? satCopy.submittedVerdict : satCopy.verdict)[row.status]}
+          </span>
         </div>
         <div
           style={{
@@ -385,97 +508,80 @@ function ChartedRow({
             marginTop: "3px",
           }}
         >
-          {row.status === "above"
-            ? satCopy.detail.above
-            : row.status === "below"
-              ? satCopy.detail.below
-              : satCopy.detail.within(row.bandPosition ?? 0)}
+          {(() => {
+            const d = sub ? satCopy.submittedDetail : satCopy.detail;
+            return row.status === "above"
+              ? d.above
+              : row.status === "below"
+                ? d.below
+                : d.within(row.bandPosition ?? 0);
+          })()}
         </div>
       </div>
+    </div>
+    {sub && (
+      <SchoolNotes
+        supportingCopy={row.supportingCopy}
+        disclaimerText={row.disclaimerText}
+        contactGuidance={row.contactGuidance}
+        compact={compact}
+      />
+    )}
     </div>
   );
 }
 
-function FallbackRow({ row }: { row: SatFallbackRow }) {
-  const small: React.CSSProperties = {
-    fontSize: "10px",
-    lineHeight: 1.4,
-    color: theme.color.ink,
-    margin: "5px 0 0 0",
-  };
+function FallbackRow({ row, compact = false }: { row: SatFallbackRow; compact?: boolean }) {
   return (
     <div
       style={{
-        display: "grid",
-        gridTemplateColumns: COLS,
-        gap: "12px",
-        alignItems: "start",
-        paddingTop: "8px",
-        marginBottom: "8px",
+        paddingTop: compact ? "5px" : "8px",
+        marginBottom: compact ? "4px" : "8px",
         borderTop: `1px solid ${theme.color.hairline}`,
         breakInside: "avoid",
       }}
     >
       <div
         style={{
-          fontSize: "11.5px",
-          fontWeight: 700,
-          color: theme.color.navy,
-          lineHeight: 1.25,
+          display: "grid",
+          gridTemplateColumns: COLS,
+          gap: "12px",
+          alignItems: "center",
+          marginBottom: compact ? "3px" : "6px",
         }}
       >
-        {row.name}
-      </div>
-      <div
-        style={{
-          border: `1px dashed ${theme.color.inkFaint}`,
-          borderRadius: "8px",
-          padding: "9px 11px",
-        }}
-      >
-        <BadgeTag badge={row.badge} />
-        <p style={small}>{row.supportingCopy}</p>
-        {row.disclaimerText && (
-          <p style={{ ...small, color: theme.color.inkMuted }}>
-            {row.disclaimerText}
-          </p>
-        )}
-        {/* Call-out: what the reader should do next, set apart from the
-            explanatory copy above it. Theme tokens only. */}
-        <p
+        <div>
+          <div
+            style={{
+              fontSize: "11.5px",
+              fontWeight: 700,
+              color: theme.color.navy,
+              lineHeight: 1.25,
+              marginBottom: "3px",
+            }}
+          >
+            {row.name}
+          </div>
+          <BadgeTag badge={row.badge} />
+        </div>
+        <div />
+        <div
           style={{
-            ...small,
-            margin: "7px 0 0 0",
-            padding: "6px 9px",
-            fontWeight: 600,
-            color: theme.color.navy,
-            backgroundColor: theme.color.goldSoft,
-            borderLeft: `3px solid ${theme.color.gold}`,
-            borderRadius: "4px",
+            fontSize: "11px",
+            fontWeight: 700,
+            color: theme.sat.neutral,
           }}
         >
-          {row.contactGuidance}
-        </p>
-        {row.websiteUrl && (
-          <p style={{ ...small, fontWeight: 700 }}>
-            <a
-              href={row.websiteUrl}
-              style={{ color: theme.color.navy, textDecoration: "underline" }}
-            >
-              {satCopy.visit(websiteHost(row.websiteUrl))}
-            </a>
-          </p>
-        )}
+          {satCopy.noScoreData}
+        </div>
       </div>
-      <div
-        style={{
-          fontSize: "11px",
-          fontWeight: 700,
-          color: theme.sat.neutral,
-        }}
-      >
-        {satCopy.noScoreData}
-      </div>
+      <SchoolNotes
+        supportingCopy={row.supportingCopy}
+        disclaimerText={row.disclaimerText}
+        contactGuidance={row.contactGuidance}
+        websiteUrl={row.websiteUrl}
+        compact={compact}
+      />
     </div>
   );
 }
@@ -483,9 +589,12 @@ function FallbackRow({ row }: { row: SatFallbackRow }) {
 function Chips({ block }: { block: SatBlock }) {
   const chips: Array<{ text: string; color: string }> = [];
   const c = block.counts;
-  if (c.above > 0) chips.push({ text: satCopy.chip.above(c.above), color: theme.sat.above });
-  if (c.within > 0) chips.push({ text: satCopy.chip.within(c.within), color: theme.sat.within });
-  if (c.below > 0) chips.push({ text: satCopy.chip.below(c.below), color: theme.sat.below });
+  const chipCopy = block.charted.some((r) => r.submittedOnly)
+    ? satCopy.submittedChip
+    : satCopy.chip;
+  if (c.above > 0) chips.push({ text: chipCopy.above(c.above), color: theme.sat.above });
+  if (c.within > 0) chips.push({ text: chipCopy.within(c.within), color: theme.sat.within });
+  if (c.below > 0) chips.push({ text: chipCopy.below(c.below), color: theme.sat.below });
   if (c.noData > 0) chips.push({ text: satCopy.chip.noData(c.noData), color: theme.sat.neutral });
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
@@ -510,18 +619,21 @@ function Chips({ block }: { block: SatBlock }) {
   );
 }
 
-function Note() {
+function Note({ showSubmittedNote }: { showSubmittedNote: boolean }) {
+  const style: React.CSSProperties = {
+    fontSize: "8.5px",
+    lineHeight: 1.5,
+    color: theme.color.inkMuted,
+    margin: "6px 0 0 0",
+  };
   return (
-    <p
-      style={{
-        fontSize: "8.5px",
-        lineHeight: 1.5,
-        color: theme.color.inkMuted,
-        margin: "6px 0 0 0",
-      }}
-    >
-      {satCopy.note(satCopy.noteYear)}
-    </p>
+    <>
+      <p style={style}>
+        {showSubmittedNote
+          ? satCopy.submittedNote(satCopy.noteYear)
+          : satCopy.note(satCopy.noteYear)}
+      </p>
+    </>
   );
 }
 
@@ -552,12 +664,13 @@ export function SatPageContent({
     );
   }
   const score = block.studentScore as number;
+  const { compact, hideChips } = satLayoutMode(block);
   const hasCharted = items.some((i) => i.kind === "charted");
   let axisShown = false;
 
   return (
     <div>
-      {pageIndex === 0 && <Chips block={block} />}
+      {pageIndex === 0 && !hideChips && <Chips block={block} />}
       {pageIndex === 0 && block.state === "no_college_data" && (
         <p style={{ fontSize: "11.5px", lineHeight: 1.6, color: theme.color.ink, margin: "0 0 12px 0" }}>
           {satCopy.noCollegeData}
@@ -570,13 +683,19 @@ export function SatPageContent({
           return (
             <React.Fragment key={`c${it.row.unitid}`}>
               {showAxis && <AxisRow axis={block.axis} />}
-              <ChartedRow row={it.row} axis={block.axis} score={score} />
+              <ChartedRow row={it.row} axis={block.axis} score={score} compact={compact} />
             </React.Fragment>
           );
         }
         if (it.kind === "fallback")
-          return <FallbackRow key={`f${it.row.unitid}`} row={it.row} />;
-        if (it.kind === "note") return <Note key={`n${i}`} />;
+          return <FallbackRow key={`f${it.row.unitid}`} row={it.row} compact={compact} />;
+        if (it.kind === "note")
+          return (
+            <Note
+              key={`n${i}`}
+              showSubmittedNote={block.charted.some((r) => r.submittedOnly)}
+            />
+          );
         return null;
       })}
     </div>
@@ -595,7 +714,9 @@ export interface SatPositioningProps {
 const titleOf = (block: SatBlock) =>
   block.state === "no_student_score" || block.studentScore == null
     ? satCopy.titleNoScore
-    : satCopy.title(block.studentScore);
+    : block.charted.some((r) => r.submittedOnly)
+      ? satCopy.titleNeutral(block.studentScore)
+      : satCopy.title(block.studentScore);
 
 export default function SatPositioning({
   payload,

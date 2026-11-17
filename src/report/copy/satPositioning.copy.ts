@@ -9,6 +9,9 @@ export const satCopy = {
   titleNoScore: "Test Score Positioning",
   title: (score: number) =>
     `Your ${score} SAT, from strongest fit to biggest stretch`,
+  /** Used when the section includes any school whose range covers only students who submitted scores. */
+  titleNeutral: (score: number) =>
+    `Your ${score} SAT against each school's reported range`,
 
   chip: {
     above: (n: number) => `${n} above range`,
@@ -27,6 +30,27 @@ export const satCopy = {
     within: (pct: number) => `${pct}% of the way through the middle 50%`,
     below: "Most enrolled students who reported scores scored higher",
   },
+
+  /** Schools in H_TEST_CONSIDERED / C_TEST_OPTIONAL: the range covers submitters only. */
+  submittedVerdict: {
+    above: "Above the range of students who submitted scores",
+    within: "Within the range of students who submitted scores",
+    below: "Below the range of students who submitted scores",
+  },
+  submittedDetail: {
+    above: "Higher than about 3 in 4 students who submitted scores",
+    within: (pct: number) => `${pct}% of the way through the middle 50%`,
+    below: "Most students who submitted scores scored higher",
+  },
+  /** Summary chips on pages that include a submitted-only school. */
+  submittedChip: {
+    above: (n: number) => `${n} above the submitted range`,
+    within: (n: number) => `${n} within the submitted range`,
+    below: (n: number) => `${n} below the submitted range`,
+  },
+  /** Single chart note used instead of `note` when a submitted-only school is charted. */
+  submittedNote: (year: number) =>
+    `Range = middle 50% of enrolled students who submitted SAT scores (Reading & Writing plus Math 25th/75th percentiles, an approximation of the composite). For schools that consider scores if submitted, it may sit higher than the typical applicant. Dashed line = distance from your score to the nearest edge of that range. Source: IPEDS ${year} via College Scorecard.`,
 
   mid50: (p25: number, p75: number) => `Mid 50%: ${p25}–${p75}`,
   gapBelow: (gap: number) => `−${gap} pts`,
@@ -55,6 +79,10 @@ export function satCopyNumbers(): Set<string> {
     satCopy.detail.above,
     satCopy.detail.below,
     satCopy.detail.within(0),
+    satCopy.submittedDetail.above,
+    satCopy.submittedDetail.below,
+    satCopy.submittedDetail.within(0),
+    satCopy.submittedNote(satCopy.noteYear),
     satCopy.noStudentScore,
     satCopy.noCollegeData,
     satCopy.note(satCopy.noteYear),

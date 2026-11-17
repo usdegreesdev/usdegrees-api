@@ -14,6 +14,7 @@ import {
   SAT_AXIS,
   SAT_CATEGORY_KEYS,
   SAT_SCALE,
+  isSubmittedOnlyCategory,
 } from "../config/satPositioning.config";
 
 // ---------------- types ----------------
@@ -65,6 +66,12 @@ export interface SatChartedRow {
   bandPosition: number | null;
   midpointDelta: number;
   badge: SatBadge | null;
+  /** Range covers only students who submitted scores (H_TEST_CONSIDERED / C_TEST_OPTIONAL). */
+  submittedOnly: boolean;
+  /** Database copy shown under the row; set only when submittedOnly. */
+  supportingCopy: string | null;
+  disclaimerText: string | null;
+  contactGuidance: string | null;
 }
 
 export interface SatFallbackRow {
@@ -258,6 +265,7 @@ export function buildSatPositioning(
       const p75 = Number(c.schoolMaxRange);
       const status: SatStatus =
         studentScore < p25 ? "below" : studentScore > p75 ? "above" : "within";
+      const submittedOnly = isSubmittedOnlyCategory(c.category?.category);
       charted.push({
         unitid: c.unitid,
         name: c.name,
@@ -280,6 +288,12 @@ export function buildSatPositioning(
           c.category && c.category.show_badge_with_range
             ? toBadge(c.category)
             : null,
+        submittedOnly,
+        supportingCopy: submittedOnly ? (c.category?.supporting_copy ?? null) : null,
+        disclaimerText: submittedOnly ? (c.category?.disclaimer_text ?? null) : null,
+        contactGuidance: submittedOnly
+          ? (c.category?.contact_guidance ?? defaultCategory.contact_guidance ?? null)
+          : null,
       });
       continue;
     }
@@ -298,10 +312,14 @@ export function buildSatPositioning(
   }
 
   // Strongest fit (score well above the band) → biggest stretch; ties keep
-  // display order.
-  charted.sort(
-    (a, b) => b.midpointDelta - a.midpointDelta || a.displayOrder - b.displayOrder,
-  );
+  // display order. When any school's range covers only students who submitted
+  // scores, no fit ranking is applied: everything stays in the order entered
+  // (already display order), and the page heading is neutral to match.
+  if (!charted.some((r) => r.submittedOnly)) {
+    charted.sort(
+      (a, b) => b.midpointDelta - a.midpointDelta || a.displayOrder - b.displayOrder,
+    );
+  }
 
   const counts = {
     above: charted.filter((r) => r.status === "above").length,

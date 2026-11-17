@@ -25,11 +25,51 @@ export const SAT_CATEGORY_KEYS = {
   noScoreData: "G_NO_SCORE_DATA",
 } as const;
 
+/**
+ * Categories whose SAT range reflects only students who submitted scores.
+ * These schools get neutral wording (no "fit"/"stretch" verdict) on the SAT
+ * positioning page and "Fit is not applicable" on the academic-fit page.
+ */
+export const SAT_SUBMITTED_ONLY_CATEGORIES: ReadonlySet<string> = new Set([
+  "H_TEST_CONSIDERED",
+  "C_TEST_OPTIONAL",
+]);
+
+export const isSubmittedOnlyCategory = (c: string | null | undefined): boolean =>
+  c != null && SAT_SUBMITTED_ONLY_CATEGORIES.has(c);
+
+/** Page-4 reason for schools whose SAT range covers only students who submitted scores. */
+export const FIT_NA_SUBMITTED_REASON =
+  "Fit is not applicable: test scores are optional or considered if submitted";
+
 /** Layout weights used to paginate rows across A4 pages (see SatPositioning). */
 export const SAT_LAYOUT = {
   chartedRowWeight: 10,
-  fallbackRowWeight: 21,
+  /** Header line (name, badge, "No score data") of a no-range school; its copy block is weighed from text length. */
+  fallbackHeaderWeight: 5,
+  /** Copy block under a row: ~chars per rendered line, weight per line, fixed padding/gap weight, website link line. */
+  notesLineChars: 125,
+  notesLineWeight: 1.6,
+  notesPadWeight: 2.5,
+  notesLinkWeight: 1.8,
   noteWeight: 10,
+  /** The merged submitted-scores note is slightly longer than the default note. */
+  submittedNoteExtraWeight: 2,
   firstPageCapacity: 70,
   nextPageCapacity: 80,
+  /**
+   * Compact layout (4+ colleges where some carry copy): tighter rows and copy
+   * so five colleges fit one page. Weights are ~px / 9.3.
+   */
+  compact: {
+    chartedRowWeight: 8.8,
+    fallbackHeaderWeight: 4.6,
+    notesLineChars: 150,
+    notesLineWeight: 1.3,
+    notesPadWeight: 1.4,
+    notesLinkWeight: 1.4,
+    firstPageCapacity: 86,
+    firstPageCapacityNoChips: 92,
+    nextPageCapacity: 92,
+  },
 } as const;

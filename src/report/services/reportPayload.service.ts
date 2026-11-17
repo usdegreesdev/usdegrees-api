@@ -34,6 +34,7 @@ import CREDENTIAL_LEVELS from "../../constants/credentials";
 import { getEarningsForProgram } from "../../services/earnings.service";
 import { getAthleticsProfile } from "../../services/athletics.service";
 import { loadSatPositioning } from "./satPositioning.service";
+import { isSubmittedOnlyCategory } from "../config/satPositioning.config";
 
 // ---- vintage constants (no DB columns yet) -----------------------
 const NET_PRICE_VINTAGE = "College Scorecard, October 2026 update";
@@ -62,7 +63,9 @@ const BRACKET_TO_LABEL: Record<IncomeBracket, string> = {
   "110001_plus": "$110,001+",
 };
 
-// Disclosure categories that make an academic fit score meaningless.
+// Disclosure categories that make an academic fit score meaningless. Test-
+// optional / scores-considered-if-submitted schools (isSubmittedOnlyCategory)
+// are also "Not applicable": their SAT range covers only submitters.
 const NO_FIT_CATEGORIES = new Set([
   "A_OPEN_ADMISSION",
   "B_NOT_USED",
@@ -373,7 +376,7 @@ async function fetchTuitionDetail(
 // ------------------------------------------------------------------
 // Derived flags (pure computation)
 // ------------------------------------------------------------------
-function computeDerivedFlags(
+export function computeDerivedFlags(
   studentSat: number | null,
   schools: C1LitePayload["schools"],
   roi20YrByName: Record<string, number>,
@@ -381,6 +384,9 @@ function computeDerivedFlags(
   const merit: string[] = [];
   const reach: string[] = [];
   for (const s of schools) {
+    // Ranges for test-optional / considered-if-submitted schools cover only
+    // students who submitted scores, so they never raise merit/reach flags.
+    if (isSubmittedOnlyCategory(s.sat_data_category)) continue;
     if (studentSat != null && s.sat_75 != null && studentSat > s.sat_75)
       merit.push(s.display_name);
     if (studentSat != null && s.sat_25 != null && studentSat < s.sat_25)
@@ -521,7 +527,7 @@ export async function buildC1LitePayload(args: {
     // Fit — skip for open-admission / test-not-used / closed.
     let fitScore: number | null = null;
     let fitLabel: string | null = "Not applicable";
-    if (!NO_FIT_CATEGORIES.has(category)) {
+    if (!NO_FIT_CATEGORIES.has(category) && !isSubmittedOnlyCategory(category)) {
       const fit = calculateAdmissionFit(
         {
           gpa: student.gpa,

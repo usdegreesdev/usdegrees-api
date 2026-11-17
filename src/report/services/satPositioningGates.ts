@@ -57,6 +57,12 @@ export function gateSatBlock(
       );
   }
 
+  // Submitted-only rows must carry their database copy.
+  for (const r of block.charted) {
+    if (r.submittedOnly && (!r.supportingCopy?.trim() || !r.contactGuidance?.trim()))
+      errs.push(`SAT: ${r.unitid} (scores considered if submitted) is missing supporting copy or contact guidance.`);
+  }
+
   // Gate 4
   for (const f of block.fallback) {
     if (!f.supportingCopy?.trim())
