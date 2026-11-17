@@ -71,7 +71,7 @@ export default function ExecutiveSummary({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
           <RangeTile label="Net Price Range" low={derived_flags.cost_range_low} high={derived_flags.cost_range_high} />
           <RangeTile label="Program Earnings Range" low={derived_flags.earnings_range_low} high={derived_flags.earnings_range_high} />
-          <RangeTile label="Typical Debt Range" low={derived_flags.debt_range_low} high={derived_flags.debt_range_high} />
+          <RangeTile label="Typical Debt Range (School level) " low={derived_flags.debt_range_low} high={derived_flags.debt_range_high} />
         </div>
       </div>
 

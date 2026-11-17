@@ -2,6 +2,11 @@ import React from "react";
 import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
+import {
+  debtRatioMethodology,
+  debtRatioDefinitions,
+  debtRatioRefreshed,
+} from "../utils/debtRatio";
 
 export interface MethodologyProps {
   payload: C1LitePayload;
@@ -12,6 +17,7 @@ export interface MethodologyProps {
 }
 
 export default function Methodology({
+  payload,
   reportId,
   generatedDate,
   pageNumber,
@@ -70,9 +76,20 @@ export default function Methodology({
                 test-not-used, or closed institutions.
               </div>
               <div>
-                <strong>• Debt-to-Income Ratio:</strong> A published federal
-                outcome label (avg_debt vs. cohort earnings) — reported as-is,
-                not computed or interpreted by this report.
+                <strong>• Debt-to-Income Ratio:</strong> {debtRatioMethodology()}
+              </div>
+              <div>
+                <strong>How to read the debt-to-income figures</strong>
+                <ul style={{ margin: "4px 0 0 0", paddingLeft: "18px" }}>
+                  {debtRatioDefinitions(
+                    debtRatioRefreshed(
+                      payload?.schools ?? [],
+                      payload?.report_meta?.generated_date ?? "",
+                    ),
+                  ).map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
               </div>
               <div>
                 <strong>

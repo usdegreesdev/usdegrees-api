@@ -22,6 +22,14 @@ import pool from "../../db/client";
 import type { C1LitePayload } from "./reportPrompt";
 import { calculateAdmissionFit } from "../utils/admissionScore";
 import { analyzeRoi } from "../utils/roi";
+import {
+  resolveDebt,
+  ratioNumeral,
+  debtRatioQuery,
+  debtRatioDefinitionText,
+  debtRatioRefreshed,
+  DEBT_RATIO_BASIS,
+} from "../utils/debtRatio";
 import CREDENTIAL_LEVELS from "../../constants/credentials";
 import { getEarningsForProgram } from "../../services/earnings.service";
 import { getAthleticsProfile } from "../../services/athletics.service";
@@ -238,17 +246,11 @@ async function fetchRoi(unitid: number, credentialLevel: number | null) {
 
 // Typical debt at completion + debt-to-income (federal outcome metric).
 async function fetchDebt(unitid: number) {
-  const { rows } = await pool.query(
-    `SELECT avg_debt, debt_income_ratio, ratio_text FROM debt_income_ratio WHERE unitid = $1 LIMIT 1`,
-    [unitid],
-  );
-  const data = rows[0];
-  return {
-    avg_debt: data?.avg_debt != null ? Math.round(Number(data.avg_debt)) : null,
-    ratio:
-      data?.debt_income_ratio != null ? Number(data.debt_income_ratio) : null,
-    ratio_text: data?.ratio_text ?? null,
-  };
+  // One query: avg_debt + the single configured earnings column
+  // (DEBT_RATIO_BASIS) — see debtRatioQuery. The ratio is computed in
+  // debtRatio.ts only.
+  const { rows } = await pool.query(debtRatioQuery(), [unitid]);
+  return resolveDebt(rows[0]);
 }
 
 async function fetchStudent(userId: number) {
@@ -591,16 +593,16 @@ export async function buildC1LitePayload(args: {
       sticker_price: costs.sticker,
       sticker_vintage: costs.sticker != null ? NET_PRICE_VINTAGE : null,
       avg_debt: debt.avg_debt,
-      // Derived from the two figures the report itself shows (typical debt ÷
-      // program earnings) rather than the debt_income_ratio column, so the
-      // ratio always reconciles with the numbers printed beside it. Null —
-      // or non-positive earnings, which makes the quotient meaningless —
-      // leaves it null and downstream renders "cannot be calculated".
-      debt_income_ratio:
-        debt.avg_debt != null && earn.earnings != null && earn.earnings > 0
-          ? Number((debt.avg_debt / earn.earnings).toFixed(2))
-          : null,
-      debt_ratio_text: debt.ratio_text,
+      // typical debt ÷ school-level earnings at DEBT_RATIO_BASIS, computed by
+      // computeDebtIncomeRatio; null renders as "cannot be calculated due to
+      // missing values".
+      debt_income_ratio: debt.ratio,
+      debt_income_earnings: debt.earnings,
+      debt_income_basis_label: DEBT_RATIO_BASIS.label,
+      debt_income_earnings_fetched_on: debt.fetched_on,
+      // Two-decimal numeral ("0.30") so narrative text traces character-for-
+      // character even when the number serialises without the trailing zero.
+      debt_income_ratio_display: ratioNumeral(debt.ratio),
       debt_vintage: debt.avg_debt != null ? "College Scorecard" : null,
     });
   }
@@ -640,15 +642,17 @@ export async function buildC1LitePayload(args: {
     pendingUnitids: args.schools.map((s) => s.unitid),
   });
 
+  const generatedDate = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
   return {
     report_meta: {
       report_reference_id: meta.report_reference_id,
       created_at: meta.created_at,
-      generated_date: new Date().toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }),
+      generated_date: generatedDate,
       methodology_version: args.methodologyVersion ?? "lite-v1",
     },
     student: {
@@ -672,6 +676,11 @@ export async function buildC1LitePayload(args: {
         : null,
     },
     schools: out,
+    // Plain-text definition of the debt-to-income figures (same text as the
+    // methodology page block) so a reader of the payload can interpret them.
+    debt_income_ratio_definition: debtRatioDefinitionText(
+      debtRatioRefreshed(out, generatedDate),
+    ),
     derived_flags: computeDerivedFlags(studentTotalSat, out, roi20YrByName),
     college_details,
     sat_positioning,

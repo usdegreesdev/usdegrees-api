@@ -3,20 +3,12 @@ import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 
-/**
- * debt_income_ratio is derived in reportPayload.service (typical debt ÷
- * program earnings) rather than read from the reported federal column, so
- * this cell always reconciles with the two columns beside it. It is rendered
- * as a debt : income ratio rather than a bare decimal — the payload number is
- * the debt side against an income of 1, so 0.52 prints as "0.52 : 1". The
- * numeral itself is unchanged from the payload, which gateNumbersTraceable
- * requires of the narrative citing the same value.
- */
-const MISSING_RATIO = "Cannot be calculated due to missing values";
-
-function debtToIncome(ratio: number | null): string {
-  return ratio != null ? `${ratio} : 1` : MISSING_RATIO;
-}
+import {
+  formatDebtIncomeRatio,
+  debtRatioDisclaimer,
+  schoolEarningsColumnLabel,
+  MISSING_RATIO_TEXT,
+} from "../utils/debtRatio";
 
 export interface CareerOutcomesProps {
   payload: C1LitePayload;
@@ -80,7 +72,7 @@ export default function CareerOutcomes({
               marginBottom: "4px",
             }}
           >
-            Typical Debt at Completion
+            Typical Debt at Completion (School level)
           </div>
           <p style={{ margin: 0, color: theme.color.ink }}>
             {narrative.debt_burden_paragraph}
@@ -109,7 +101,12 @@ export default function CareerOutcomes({
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
               >
-                Program Earnings (Yr 10)
+                Median Earnings (Yr 10)
+              </th>
+              <th
+                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
+              >
+                {schoolEarningsColumnLabel()}
               </th>
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
@@ -172,13 +169,24 @@ export default function CareerOutcomes({
                     color: theme.color.ink,
                   }}
                 >
+                  {s.debt_income_earnings != null
+                    ? `$${s.debt_income_earnings.toLocaleString()}`
+                    : "Not published"}
+                </td>
+                <td
+                  style={{
+                    padding: "8px",
+                    textAlign: "right",
+                    color: theme.color.ink,
+                  }}
+                >
                   {s.avg_debt != null
                     ? `$${s.avg_debt.toLocaleString()}${s.avg_debt === 0 ? " *" : ""}`
                     : "Not published"}
                 </td>
                 {(() => {
-                  const ratio = debtToIncome(s.debt_income_ratio);
-                  const missing = ratio === MISSING_RATIO;
+                  const ratio = formatDebtIncomeRatio(s.debt_income_ratio);
+                  const missing = ratio === MISSING_RATIO_TEXT;
                   return (
                     <td
                       style={{
@@ -200,6 +208,17 @@ export default function CareerOutcomes({
             ))}
           </tbody>
         </table>
+
+        <p
+          style={{
+            fontSize: "8.5px",
+            lineHeight: "1.45",
+            color: theme.color.inkMuted,
+            margin: "-12px 0 12px 0",
+          }}
+        >
+          {debtRatioDisclaimer()}
+        </p>
 
         {schools.some((s) => s.avg_debt === 0) && (
           <p

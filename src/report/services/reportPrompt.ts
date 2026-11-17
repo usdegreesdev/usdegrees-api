@@ -15,6 +15,7 @@
 import type { AthleticsProfile } from "../../types/athletics";
 import type { SatPositioning } from "./satPositioning";
 import { gateSatNarrative, runSatGates } from "./satPositioningGates";
+import { formatDebtIncomeRatio, DEBT_RATIO_BASIS } from "../utils/debtRatio";
 
 // ---------------- PAYLOAD (built by reportPayload.service) ----------------
 export interface C1LitePayload {
@@ -69,7 +70,11 @@ export interface C1LitePayload {
     earnings_method_flag: string | null; roi_ratio: string | null;
     sticker_price: number | null; sticker_vintage: string | null;
     avg_debt: number | null; debt_income_ratio: number | null;
-    debt_ratio_text: string | null; debt_vintage: string | null;
+    debt_income_ratio_display: string | null; debt_vintage: string | null;
+    // Basis of the ratio: the school-level earnings it was divided by and the
+    // label for that point in time (from DEBT_RATIO_BASIS).
+    debt_income_earnings: number | null; debt_income_basis_label: string;
+    debt_income_earnings_fetched_on: string | null;
   }>;
   derived_flags: {
     merit_flag_schools: string[]; reach_flag_schools: string[];
@@ -82,6 +87,9 @@ export interface C1LitePayload {
   // unique unitid, even when that college appears multiple times in
   // `schools` under different compared programs. Powers the Campus &
   // Students, Tuition & Costs, and Athletics pages.
+  // Plain-text definition of the debt-to-income figures (same text as the
+  // methodology page block; see debtRatioDefinitions).
+  debt_income_ratio_definition: string;
   college_details: Array<{
     unitid: string;
     name: string;
@@ -144,8 +152,8 @@ platform. Plain English, ~9th-grade reading level. You NEVER rank, recommend, pr
 or criticize a school. You price schools and describe outcomes; families decide.
 
 This is the C1-LITE edition. You have sticker price, net price, admission, earnings,
-typical debt at completion (avg_debt) and a debt-to-income ratio (debt_income_ratio) already
-calculated for you as avg_debt divided by program_earnings. You have NO
+typical debt at completion (avg_debt) and a school-level debt-to-income ratio
+(debt_income_ratio) supplied as data. You have NO
 funding gap, NO loan forecast, NO monthly payment / PLUS projection, NO campus-safety,
 graduation-rate, or trajectory data — never mention or invent any of those. avg_debt is a
 reported typical figure, NOT a projection you compute.
@@ -215,13 +223,18 @@ WRITE ONLY THESE (lengths are ceilings):
   and the earnings range. Do NOT state the earnings vintage year here — the figure and its
   method flag only. No "best". ≤90 words.
 - debt_burden_paragraph: state each school's avg_debt (typical debt at completion) and its
-  debt_income_ratio, plus the debt range. debt_income_ratio is already calculated for you as
-  avg_debt divided by program_earnings — write the payload value exactly, in ratio form
-  against an income of 1 (payload 0.52 is written "0.52 : 1"), and describe it as
-  "typical debt divided by program earnings". Never recompute it yourself, and never quote
-  debt_ratio_text or any federal label. When debt_income_ratio is null, write that the ratio
-  cannot be calculated due to missing values. Never describe a monthly payment or loan
-  schedule. ≤90 words.
+  debt_income_ratio, plus the debt range. debt_income_ratio is supplied as data and is already
+  calculated: the school's typical debt (avg_debt) divided by the school's
+  median earnings ${DEBT_RATIO_BASIS.label} (debt_income_basis_label; College Scorecard,
+  students who received federal aid; the earnings figure is debt_income_earnings). It
+  describes the whole school, not the specific program. Write debt_income_ratio_display exactly, in the form
+  "<debt_income_ratio_display> : 1" (display "0.35" is written "0.35 : 1"), and describe it only
+  with that basis. Use the payload ratio as given: never recompute it, never derive it from
+  program_earnings, never state another formula, and never quote any other label or format for
+  it. When explaining the ratio, use debt_income_ratio_definition. Never describe the ratio as
+  program-level, never compare it with the program-level Median Earnings (Yr 10) figure, and never call a
+  ratio good, bad, high, low, healthy or risky. When debt_income_ratio_display is null, write that the ratio cannot be calculated due to
+  missing values. Never describe a monthly payment or loan schedule. ≤90 words.
 - plain_english_question: neutral framing — with cost and outcomes on the table, the
   question is which cost-and-value structure the family can carry. No recommendation. ≤90 words.
 - executive_summary and analyst_note: 2–4 neutral sentences each, only facts from the payload.
@@ -360,17 +373,16 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
       ? ` Range across selected schools: ${money(Number(derived_flags.earnings_range_low))} to ${money(Number(derived_flags.earnings_range_high))}.`
       : "");
 
-  // debt_income_ratio is derived in reportPayload.service as typical debt
-  // divided by program earnings — the same value the Section 04 table shows —
-  // so the paragraph describes the calculation instead of quoting the
-  // reported federal label.
+  // debt_income_ratio is the payload value (typical debt ÷ school median
+  // earnings at DEBT_RATIO_BASIS) — the same value the Section 04 table shows.
+  // Never recomputed here.
   const debt_burden_paragraph = schools
-    .map((s) => `${s.display_name}: typical debt ${money(s.avg_debt)}, debt-to-income ratio ${s.debt_income_ratio != null ? `${s.debt_income_ratio} : 1 (typical debt divided by program earnings)` : "cannot be calculated due to missing values"}.`)
+    .map((s) => `${s.display_name}: typical debt ${money(s.avg_debt)}, debt-to-income ratio ${formatDebtIncomeRatio(s.debt_income_ratio)}${s.debt_income_ratio != null ? ` (typical debt ÷ school median earnings ${s.debt_income_basis_label ?? DEBT_RATIO_BASIS.label})` : ""}.`)
     .join(" ") + (derived_flags.debt_range_low && derived_flags.debt_range_high
       ? ` Range across selected schools: ${money(Number(derived_flags.debt_range_low))} to ${money(Number(derived_flags.debt_range_high))}.`
-      : "");
+      : "") + " The ratio describes the whole school, not the program shown, and is not comparable to the program-level Median Earnings (Yr 10).";
 
-  const plain_english_question = `With net price, admissions fit, program earnings, and typical debt on the table for ${schools.map((s) => s.display_name).join(", ")}, the question for your family is which cost-and-value structure you can carry — not which school ranks highest.`;
+  const plain_english_question = `With net price, admissions fit, program earnings, and School level typical debt on the table for ${schools.map((s) => s.display_name).join(", ")}, the question for your family is which cost-and-value structure you can carry — not which school ranks highest.`;
 
   return {
     two_minute_lines,

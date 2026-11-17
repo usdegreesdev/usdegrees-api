@@ -440,7 +440,22 @@ function FallbackRow({ row }: { row: SatFallbackRow }) {
             {row.disclaimerText}
           </p>
         )}
-        <p style={small}>{row.contactGuidance}</p>
+        {/* Call-out: what the reader should do next, set apart from the
+            explanatory copy above it. Theme tokens only. */}
+        <p
+          style={{
+            ...small,
+            margin: "7px 0 0 0",
+            padding: "6px 9px",
+            fontWeight: 600,
+            color: theme.color.navy,
+            backgroundColor: theme.color.goldSoft,
+            borderLeft: `3px solid ${theme.color.gold}`,
+            borderRadius: "4px",
+          }}
+        >
+          {row.contactGuidance}
+        </p>
         {row.websiteUrl && (
           <p style={{ ...small, fontWeight: 700 }}>
             <a
