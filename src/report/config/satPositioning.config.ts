@@ -42,6 +42,14 @@ export const isSubmittedOnlyCategory = (c: string | null | undefined): boolean =
 export const FIT_NA_SUBMITTED_REASON =
   "Fit is not applicable: test scores are optional or considered if submitted";
 
+/**
+ * fit_label "Unavailable": the school publishes no SAT average or full SAT
+ * band, so no fit can be calculated (~700 schools). Written verbatim by both
+ * the AI narrative and the fallback sentences.
+ */
+export const FIT_UNAVAILABLE_SENTENCE =
+  "Academic Fit: Unavailable. This school does not publish the SAT data needed to compare a test score against it, so no fit classification is shown.";
+
 /** Layout weights used to paginate rows across A4 pages (see SatPositioning). */
 export const SAT_LAYOUT = {
   chartedRowWeight: 10,

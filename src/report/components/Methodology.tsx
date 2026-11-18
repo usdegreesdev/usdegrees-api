@@ -2,11 +2,7 @@ import React from "react";
 import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
-import {
-  debtRatioMethodology,
-  debtRatioDefinitions,
-  debtRatioRefreshed,
-} from "../utils/debtRatio";
+import { debtRatioMethodology, debtRatioRefreshed } from "../utils/debtRatio";
 import { STICKER_METHODOLOGY } from "../utils/stickerPrice";
 import { GRAD_RATE_METHODOLOGY } from "../utils/gradRate";
 import { missingFiguresMethodology } from "../utils/missingValue";
@@ -39,8 +35,8 @@ export default function Methodology({
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: "20px",
-            marginBottom: "30px",
+            gap: "14px",
+            marginBottom: "18px",
           }}
         >
           <div>
@@ -60,27 +56,28 @@ export default function Methodology({
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: "8px",
+                gap: "6px",
                 fontSize: "12px",
                 color: theme.color.ink,
                 lineHeight: "1.4",
               }}
             >
               <div>
-                <strong>• 20-Year ROI:</strong> A precomputed figure reported
-                directly from federal cohort data (avg_salary and total_cost
-                inputs, keyed by school and credential level). Not estimated or
-                projected by this report.
-              </div>
-              <div>
-                <strong>• Admission Fit:</strong> Measures student academic
-                placement (GPA, SAT) compared to the middle 50% range of the
-                historical freshman cohort. Not applicable at open-admission,
+                <strong>• Admission Fit:</strong> Compares the student&apos;s
+                total SAT score with the school&apos;s published SAT average or
+                middle 50% range. GPA is not used, because no published GPA
+                data is available for colleges. Not applicable at open-admission,
                 test-not-used, test-optional or scores-considered-if-submitted,
                 or closed institutions.
               </div>
               <div>
-                <strong>• Debt-to-Income Ratio:</strong> {debtRatioMethodology()}
+                <strong>• Debt-to-Income Ratio:</strong>{" "}
+                {debtRatioMethodology(
+                  debtRatioRefreshed(
+                    payload?.schools ?? [],
+                    payload?.report_meta?.generated_date ?? "",
+                  ),
+                )}
               </div>
               <div>
                 <strong>• {GRAD_RATE_METHODOLOGY.split(":")[0]}:</strong>
@@ -91,23 +88,8 @@ export default function Methodology({
                 {STICKER_METHODOLOGY.slice(STICKER_METHODOLOGY.indexOf(":") + 1)}
               </div>
               <div>
-                <strong>Missing figures</strong>
-                <div style={{ marginTop: "4px" }}>
-                  {missingFiguresMethodology(payload?.federal_aid_fetched_on)}
-                </div>
-              </div>
-              <div>
-                <strong>How to read the debt-to-income figures</strong>
-                <ul style={{ margin: "4px 0 0 0", paddingLeft: "18px" }}>
-                  {debtRatioDefinitions(
-                    debtRatioRefreshed(
-                      payload?.schools ?? [],
-                      payload?.report_meta?.generated_date ?? "",
-                    ),
-                  ).map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
+                <strong>• Missing figures:</strong>{" "}
+                {missingFiguresMethodology(payload?.federal_aid_fetched_on)}
               </div>
               <div>
                 <strong>
@@ -191,16 +173,11 @@ export default function Methodology({
                 margin: 0,
               }}
             >
-              This report is neutral and comparative only — it does not rank,
-              recommend, or select a school. Most figures come directly from
-              public federal datasets. Where Census PSEO program earnings data
-              is unavailable, we may show a clearly labelled estimate derived
-              only from real reported earnings, using the U.S. Degrees earnings
-              imputation methodology. Estimates are never chained from other
-              estimates and are not presented as official Census-published
-              figures. Where no reported value or valid real-data anchor
-              exists, no estimate is generated. Confirm all figures directly
-              with each institution before making a decision.
+              Neutral and comparative only — this report does not rank or
+              recommend a school. Figures come from public federal datasets;
+              labelled estimates appear only where Census PSEO program earnings
+              are missing. Confirm all figures with each institution before
+              deciding.
             </p>
           </div>
         </div>

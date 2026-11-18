@@ -4,6 +4,13 @@ import { OutcomesRow, OutcomesResponse } from "../types/outcomes";
 import { normalizeEarningsFillMethod } from "../types/earnings";
 import { getEarningsForProgram } from "../services/earnings.service";
 import { sendError, sendInternalError } from "../utils/apiError";
+import {
+  DEBT_RATIO_BASIS,
+  debtRatioDefinitionText,
+  debtRatioQuery,
+  formatFetchedOn,
+  resolveDebt,
+} from "../report/utils/debtRatio";
 
 // ---------------------------------------------------------------------------
 // Helper — safely coerce nullable / non-finite numeric DB values
@@ -72,7 +79,10 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
   //                            The completion table has no cip_code column
   //                            (PK is unitid). emp_factor is school-level data.
   //
-  // debt_income_ratio        → LEFT JOIN on unitid + cip_code (program-level).
+  // The debt-to-income ratio is NOT read from debt_income_ratio.debt_income_ratio
+  // (its avg_income has no identifiable source). It is computed below on the
+  // PDF report's basis — avg_debt ÷ earnings.<DEBT_RATIO_BASIS.column> — via
+  // the report's own debtRatioQuery/resolveDebt, so the two surfaces agree.
   //
   // LIMIT 1 guards against fan-out duplicates from any joined table.
   // ─────────────────────────────────────────────────────────────────────────
@@ -91,10 +101,7 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
 
       -- ── Employment factor (school-level) ──────────────────────────────
       -- completion table is keyed by unitid only — no cip_code column exists.
-      co.emp_factor                   AS emp_factor,
-
-      -- ── Debt-to-income ratio (program-level) ──────────────────────────
-      di.debt_income_ratio            AS debt_income_ratio
+      co.emp_factor                   AS emp_factor
 
     FROM earnings_against_courses_merged ec
 
@@ -102,9 +109,6 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
     LEFT JOIN completion co
       ON co.unitid = ec.unitid
 
-    /* debt_income_ratio is program-level — join on unitid + cip_code */
-    LEFT JOIN debt_income_ratio di
-      ON  di.unitid   = ec.unitid
     WHERE ec.unitid   = $1
       AND replace(ec.cip_code, '.', '') = $2
 
@@ -152,6 +156,12 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
         ? await getEarningsForProgram(unitidNum, cleanCip, credentialLevel)
         : null;
 
+    // School-level debt-to-income on the report's basis (null when either
+    // input is missing or zero — never a constant).
+    const debtResult = await pool.query(debtRatioQuery(), [unitidNum]);
+    const debt = resolveDebt(debtResult.rows[0]);
+    const refreshed = formatFetchedOn(debt.fetched_on);
+
     // ── Shape nested response ─────────────────────────────────────────────
     const response: OutcomesResponse = {
       earnings: {
@@ -170,8 +180,15 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       completion: {
         emp_factor: safeNum(row.emp_factor),
       },
+      // Same figure, inputs and wording as the PDF report.
       debt_income_ratio: {
-        debt_income_ratio: safeNum(row.debt_income_ratio),
+        debt_income_ratio: debt.ratio,
+        avg_debt: debt.avg_debt,
+        basis_earnings: debt.earnings,
+        basis_label: DEBT_RATIO_BASIS.label,
+        basis_api_field: DEBT_RATIO_BASIS.apiField,
+        earnings_fetched_on: debt.fetched_on,
+        definition: refreshed !== null ? debtRatioDefinitionText(refreshed) : null,
       },
     };
 

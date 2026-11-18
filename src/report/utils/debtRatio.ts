@@ -63,17 +63,17 @@ export function debtRatioDisclaimer(): string {
 }
 
 /**
- * "How to read the debt-to-income figures" — one line per entry. `refreshed`
- * is the date the school earnings were last fetched from College Scorecard
- * (see debtRatioRefreshed).
+ * The debt-to-income definition, as short sentences. Rendered as ONE combined
+ * methodology bullet and joined into the payload's
+ * debt_income_ratio_definition, so the page and the AI read the same text.
+ * `refreshed` is the date the school earnings were last fetched from College
+ * Scorecard (see debtRatioRefreshed).
  */
 export function debtRatioDefinitions(refreshed: string): string[] {
   return [
-    `Typical debt: the school-wide typical debt shown in the table, from the College Scorecard data we hold. $0 or blank means no figure or no federal loan debt, not proven zero debt.`,
-    `School median earnings: median annual earnings of former students who received federal financial aid, measured ${DEBT_RATIO_BASIS.label}, covering the whole school. Source: College Scorecard, field ${DEBT_RATIO_BASIS.apiField}, refreshed ${refreshed}.`,
-    `Ratio: typical debt ÷ school median earnings, rounded to 2 decimals, shown as "X.XX : 1" (debt per $1 of earnings).`,
-    `Program column, Median Earnings (Yr 10): the program's earnings 10 years after completion for one graduating group, from Census PSEO. Different group, timing and level than the ratio.`,
-    `When no ratio is shown: debt $0 or not reported, or school earnings not published.`,
+    `The school's typical debt ÷ the school's median earnings ${DEBT_RATIO_BASIS.methodologyLabel} (College Scorecard, students who received federal aid; field ${DEBT_RATIO_BASIS.apiField}, refreshed ${refreshed}), rounded to 2 decimals and shown as "X.XX : 1" (debt per $1 of earnings).`,
+    `It describes the whole school, not the program shown, and is not comparable to the program-level Median Earnings (Yr 10) from Census PSEO.`,
+    `No ratio is shown when debt is $0 or not reported, or earnings are not published; $0 can mean no federal loans, not zero debt.`,
   ];
 }
 
@@ -115,8 +115,8 @@ export function debtRatioRefreshed(
 }
 
 /** Methodology-page text (after the bold "Debt-to-Income Ratio:" label). */
-export function debtRatioMethodology(): string {
-  return `the school's typical debt divided by the school's median earnings ${DEBT_RATIO_BASIS.methodologyLabel}, as published in College Scorecard data (students who received federal aid). It is calculated by this report from those two published figures and describes the whole school, not the specific program. Schools with no federal loan debt or no published earnings show no ratio.`;
+export function debtRatioMethodology(refreshed: string): string {
+  return debtRatioDefinitionText(refreshed);
 }
 
 /**

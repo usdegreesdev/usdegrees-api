@@ -117,7 +117,11 @@ test("rendered section: 0.35 / 0.14 / missing, new note, no old wording", () => 
 
 test("methodology text", () => {
   const html = renderMethodology();
-  assert.ok(html.includes("the school&#x27;s typical debt divided by the school&#x27;s median earnings 6 years after students first enrolled, as published in College Scorecard data (students who received federal aid). It is calculated by this report from those two published figures and describes the whole school, not the specific program. Schools with no federal loan debt or no published earnings show no ratio."));
+  // One combined, short Debt-to-Income bullet; no separate "How to read" block.
+  assert.ok(html.includes("The school&#x27;s typical debt ÷ the school&#x27;s median earnings 6 years after students first enrolled (College Scorecard, students who received federal aid;"));
+  assert.ok(html.includes("It describes the whole school, not the program shown"));
+  assert.ok(!html.includes("How to read the debt-to-income figures"));
+  assert.ok(!html.includes("20-Year ROI"));
   assert.ok(!html.includes("reported as stored"));
   assert.ok(!html.includes("reported as-is"));
 });
@@ -176,12 +180,12 @@ test("disclaimer and definitions render, carry the basis, hardcode no timing", (
   assert.ok(disclaimer.includes("not a prediction of your own debt or earnings"));
 
   const meth = STRIP(renderMethodology());
-  assert.ok(meth.includes("How to read the debt-to-income figures"));
+  assert.ok(meth.includes("Debt-to-Income Ratio:"));
   const lines = debtRatioDefinitions(debtRatioRefreshed(SAMPLE_PAYLOAD.schools, "November 16, 2026"));
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 3);
   for (const l of lines) assert.ok(meth.includes(l), l);
   const defs = lines.join(" ");
-  assert.ok(defs.includes(DEBT_RATIO_BASIS.label));
+  assert.ok(defs.includes(DEBT_RATIO_BASIS.methodologyLabel));
   assert.ok(defs.includes(DEBT_RATIO_BASIS.apiField));
   assert.ok(defs.includes("refreshed October 2026"));
 
@@ -241,7 +245,7 @@ test("switching to the 10-year basis changes note, definitions, field and payloa
     const note = debtRatioDisclaimer();
     const defs = debtRatioDefinitionText(refreshed);
     assert.ok(note.includes("10 years after first enrolling") && !note.includes("6 years"));
-    assert.ok(defs.includes("measured 10 years after first enrolling"));
+    assert.ok(defs.includes("median earnings 10 years after students first enrolled"));
     assert.ok(defs.includes("latest.earnings.10_yrs_after_entry.median"));
     assert.ok(!defs.includes("6_yrs") && !defs.includes("6 years"));
     assert.ok(debtRatioQuery().includes("e.earn_10yr_after_entry_median"));

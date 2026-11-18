@@ -7,8 +7,7 @@ export interface StudentRawRow {
   student_faculty_ratio: string | null;
   faculty_men: number | null;
   faculty_women: number | null;
-  // repayment
-  all_borrowers_3yr: number | null;
+  // repayment (all_borrowers_3yr is never read: not real data)
   graduates_3yr: number | null;
   non_completers_3yr: number | null;
   yr1_overall: number | null;
@@ -40,7 +39,6 @@ export interface CampusStudentsResponse {
     };
   };
   repayment: {
-    all_borrowers_3yr: number | null;
     graduates_3yr: number | null;
     non_completers_3yr: number | null;
     yr1_overall: number | null;

@@ -5,15 +5,25 @@
  * This is an Admission Fit Estimate, not a probability of admission — there is
  * intentionally no "Safety" tier, since that word implies a likelihood of
  * acceptance this score does not measure.
+ *
+ * Every input is a real value or null; nothing is defaulted. A fit needs a
+ * real SAT comparison — the student's total SAT against the college's
+ * published SAT average or full percentile band. Without one the result is
+ * "Unavailable" with a null score, never a 50 or a score built on assumed
+ * percentiles.
+ *
+ * GPA is not part of the score. The database holds no college GPA data, and
+ * the former "expected GPA" bands (3.9 / 3.75 / 3.5 / 3.2 / 3.0) were
+ * inferred from the admission rate, not published — comparing a student's
+ * GPA against them was comparing against an invented figure.
  */
 export interface StudentAcademics {
-  gpa: number | null;
-  satMath: number | null;
-  satReadingWriting: number | null;
-  actScore: number | null;
+  /** The student's total SAT (400–1600). Never inferred from one section. */
+  satTotal: number | null;
 }
 
 export interface CollegeAdmissions {
+  /** 0–1 fraction. */
   admissionRate: number | null;
   satAvg: number | null;
   sat25Math: number | null;
@@ -24,116 +34,78 @@ export interface CollegeAdmissions {
 
 export interface FitResult {
   category: "Target/Match" | "Reach" | "Unavailable";
-  score: number;
+  /** 5–99, or null when Unavailable. */
+  score: number | null;
   explanation: string;
+}
+
+const UNAVAILABLE_COLLEGE: FitResult = {
+  category: "Unavailable",
+  score: null,
+  explanation: "The college does not publish the SAT data needed to calculate academic fit.",
+};
+
+const UNAVAILABLE_STUDENT: FitResult = {
+  category: "Unavailable",
+  score: null,
+  explanation: "No SAT score was provided, so academic fit cannot be calculated.",
+};
+
+/** The college's total SAT 25th/75th percentiles, only when all four sections are published. */
+function collegeSatBand(college: CollegeAdmissions): { p25: number; p75: number } | null {
+  const { sat25Math, sat75Math, sat25Reading, sat75Reading } = college;
+  if (sat25Math == null || sat75Math == null || sat25Reading == null || sat75Reading == null) {
+    return null;
+  }
+  return { p25: sat25Math + sat25Reading, p75: sat75Math + sat75Reading };
+}
+
+function satFitScore(studentSat: number, college: CollegeAdmissions): number | null {
+  if (college.satAvg != null) {
+    // Map difference of -200 to +200 onto a score of 0 to 100
+    return Math.max(0, Math.min(100, 50 + (studentSat - college.satAvg) / 4));
+  }
+  const band = collegeSatBand(college);
+  if (band == null) return null;
+  const { p25, p75 } = band;
+  if (studentSat >= p75) return 85 + ((studentSat - p75) / (1600 - p75)) * 15;
+  if (studentSat < p25) return Math.max(10, (studentSat / p25) * 60);
+  return 60 + ((studentSat - p25) / (p75 - p25)) * 25;
 }
 
 export function calculateAdmissionFit(
   student: StudentAcademics,
   college: CollegeAdmissions
 ): FitResult {
-  // If no college admission rate or SAT averages are available, return unavailable
-  if (college.admissionRate === null && college.satAvg === null) {
-    return {
-      category: "Unavailable",
-      score: 50,
-      explanation: "Insufficient college admission data to calculate academic fit.",
-    };
-  }
+  if (student.satTotal == null) return UNAVAILABLE_STUDENT;
 
-  // Fallbacks if student SAT is missing but GPA is provided
-  const studentTotalSat =
-    student.satMath && student.satReadingWriting
-      ? student.satMath + student.satReadingWriting
-      : student.satMath
-      ? student.satMath * 2
-      : student.satReadingWriting
-      ? student.satReadingWriting * 2
-      : null;
+  const satScore = satFitScore(student.satTotal, college);
+  if (satScore == null) return UNAVAILABLE_COLLEGE;
 
-  let satScore = 50;
-  let gpaScore = 50;
-  let hasSat = false;
-  let hasGpa = false;
-
-  // 1. Calculate SAT fit
-  if (studentTotalSat !== null) {
-    hasSat = true;
-    if (college.satAvg !== null) {
-      const diff = studentTotalSat - college.satAvg;
-      // Map difference of -200 to +200 onto a score of 0 to 100
-      satScore = Math.max(0, Math.min(100, 50 + diff / 4));
-    } else if (college.sat25Math !== null && college.sat75Math !== null) {
-      const p25 = (college.sat25Math || 500) + (college.sat25Reading || 500);
-      const p75 = (college.sat75Math || 700) + (college.sat75Reading || 700);
-      if (studentTotalSat >= p75) {
-        satScore = 85 + ((studentTotalSat - p75) / (1600 - p75)) * 15;
-      } else if (studentTotalSat < p25) {
-        satScore = Math.max(10, (studentTotalSat / p25) * 60);
-      } else {
-        satScore = 60 + ((studentTotalSat - p25) / (p75 - p25)) * 25;
-      }
-    }
-  }
-
-  // 2. Calculate GPA fit (assume standard 4.0 scale)
-  // GPA comparison: average GPA for colleges usually correlates with acceptance rates
-  if (student.gpa !== null) {
-    hasGpa = true;
-    let expectedAvgGpa = 3.5; // default fallback
-    const rate = college.admissionRate !== null ? college.admissionRate : 0.5;
-
-    if (rate < 0.1) expectedAvgGpa = 3.9;
-    else if (rate < 0.25) expectedAvgGpa = 3.75;
-    else if (rate < 0.5) expectedAvgGpa = 3.5;
-    else if (rate < 0.75) expectedAvgGpa = 3.2;
-    else expectedAvgGpa = 3.0;
-
-    const diff = student.gpa - expectedAvgGpa;
-    gpaScore = Math.max(0, Math.min(100, 50 + diff * 50));
-  }
-
-  // Determine overall score based on available academic components
-  let score = 50;
-  if (hasSat && hasGpa) {
-    score = satScore * 0.6 + gpaScore * 0.4;
-  } else if (hasSat) {
-    score = satScore;
-  } else if (hasGpa) {
-    score = gpaScore;
-  } else {
-    // If student has no academic data, base score strictly on college acceptance rate
-    score = college.admissionRate !== null ? college.admissionRate * 100 : 50;
-  }
+  let score = satScore;
 
   // Factor in college selectivity (harder to get in = reach even with good scores)
-  if (college.admissionRate !== null) {
-    const selectivityPenalty = Math.max(0, (1 - college.admissionRate) * 20);
-    score = score - selectivityPenalty;
-    // Cap score at 95 for highly selective schools (acceptance rate < 10%)
-    if (college.admissionRate < 0.1 && score > 90) {
-      score = 90;
-    }
+  if (college.admissionRate != null) {
+    score -= Math.max(0, (1 - college.admissionRate) * 20);
+    // Cap at 90 for highly selective schools (acceptance rate < 10%)
+    if (college.admissionRate < 0.1 && score > 90) score = 90;
   }
 
   score = Math.max(5, Math.min(99, Math.round(score)));
 
-  let category: "Target/Match" | "Reach";
-  let explanation = "";
-
   if (score >= 45) {
-    category = "Target/Match";
-    explanation = "Your scores align with or exceed the middle 50% range of admitted students. This is an Admission Fit Estimate, not a probability of admission.";
-  } else {
-    category = "Reach";
-    explanation = college.admissionRate !== null && college.admissionRate < 0.12
-      ? "This is an ultra-selective institution with high competition. Admission remains a reach for all applicants."
-      : "Your academic credentials sit below the historical averages of admitted students, making admission competitive.";
+    return {
+      category: "Target/Match",
+      score,
+      explanation: "Your scores align with or exceed the middle 50% range of admitted students. This is an Admission Fit Estimate, not a probability of admission.",
+    };
   }
-
   return {
-    category,
+    category: "Reach",
     score,
-    explanation,
+    explanation:
+      college.admissionRate != null && college.admissionRate < 0.12
+        ? "This is an ultra-selective institution with high competition. Admission remains a reach for all applicants."
+        : "Your academic credentials sit below the historical averages of admitted students, making admission competitive.",
   };
 }

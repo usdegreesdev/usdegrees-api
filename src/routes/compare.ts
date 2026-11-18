@@ -150,7 +150,7 @@ interface SelectedItem {
   };
   programs: {
     studentFacultyRatio: string | null; // students.student_faculty_ratio, formatted "5:1"
-    repaymentSuccess: number | null; // repayment.repayment_success (raw fraction)
+    repaymentSuccess: number | null; // repayment.repayment_success (integer percent 0–100)
     popularFields: {
       fieldName: string;
       percentage: number;

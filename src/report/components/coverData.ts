@@ -58,52 +58,24 @@ const MONTHS = [
   "november",
   "december",
 ];
-const MONTH_RE = new RegExp(`\\b(${MONTHS.join("|")})\\s+(\\d{4})\\b`, "i");
-
 function titleCase(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
 /**
- * Latest dated data publication named anywhere in the report ("College
- * Scorecard, October 2026 update"). Falls back to the report's generation
- * date, since the data is read live when the report is built.
+ * Month the report's data was last checked: the newest Scorecard fetch date
+ * across its schools (report_meta.data_checked_on, read from the *_fetched_on
+ * columns). Never a month baked into a string, never the generation date —
+ * null when no fetch date is recorded.
  */
-export function latestDataMonth(payload: C1LitePayload): {
-  month: number;
-  year: number;
-} {
-  let best: { month: number; year: number } | null = null;
-  const consider = (text: unknown) => {
-    if (typeof text !== "string") return;
-    const m = MONTH_RE.exec(text);
-    if (!m) return;
-    const cand = {
-      month: MONTHS.indexOf(m[1].toLowerCase()),
-      year: Number(m[2]),
-    };
-    if (
-      !best ||
-      cand.year > best.year ||
-      (cand.year === best.year && cand.month > best.month)
-    ) {
-      best = cand;
-    }
-  };
-  for (const s of payload.schools) {
-    [
-      s.net_price_vintage,
-      s.admit_rate_vintage,
-      s.sat_vintage,
-      s.sticker_vintage,
-      s.debt_vintage,
-      s.earnings_vintage,
-    ].forEach(consider);
-  }
-  if (best) return best;
-  const d = new Date(payload.report_meta.generated_date);
-  const fallback = isNaN(d.getTime()) ? new Date() : d;
-  return { month: fallback.getMonth(), year: fallback.getFullYear() };
+export function latestDataMonth(
+  payload: C1LitePayload,
+): { month: number; year: number } | null {
+  const v = payload.report_meta.data_checked_on;
+  if (v === null || v === undefined || v === "") return null;
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T00:00:00Z` : v);
+  if (Number.isNaN(d.getTime())) return null;
+  return { month: d.getUTCMonth(), year: d.getUTCFullYear() };
 }
 
 /** "Orlando, FL" from a free-text address ("..., Orlando, FL 32801"), else null. */
@@ -128,7 +100,8 @@ export interface CoverModel {
   studentName: string;
   cityState: string | null;
   major: string | null;
-  dataChecked: string;
+  /** "November 2026", or null when no fetch date is recorded. */
+  dataChecked: string | null;
   reportId: string;
   revision: number;
   methodVersion: string;
@@ -139,8 +112,8 @@ export function buildCoverModel(
   payload: C1LitePayload,
   reportId: string,
 ): CoverModel {
-  const { month, year } = latestDataMonth(payload);
-  const monthName = titleCase(MONTHS[month]);
+  const checked = latestDataMonth(payload);
+  const monthName = checked ? titleCase(MONTHS[checked.month]) : null;
   const n = payload.schools.length;
   const countWord = schoolCountWord(n);
 
@@ -155,7 +128,10 @@ export function buildCoverModel(
   const v = /(\d+)\s*$/.exec(payload.report_meta.methodology_version ?? "");
 
   return {
-    banner: `INDEPENDENT REPORT`,
+    banner:
+      checked && monthName
+        ? `INDEPENDENT REPORT · DATA CHECKED ${monthName.slice(0, 3).toUpperCase()} ${checked.year}`
+        : "INDEPENDENT REPORT",
     countWord,
     headline: [
       `${countWord} ${n === 1 ? "school" : "schools"}.`,
@@ -164,7 +140,7 @@ export function buildCoverModel(
     studentName: payload.student.display_name,
     cityState: parseCityState(payload.student.address),
     major: programs.length === 1 ? programs[0] : null,
-    dataChecked: `${monthName} ${year}`,
+    dataChecked: checked && monthName ? `${monthName} ${checked.year}` : null,
     reportId,
     revision: REPORT_REVISION,
     methodVersion: v ? `v${v[1]}` : payload.report_meta.methodology_version,

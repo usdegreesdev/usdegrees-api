@@ -42,14 +42,18 @@ export interface AthleticDivisionBenchmarkRow {
 
 export interface AthleticsRosterEntry {
   sport: string;
-  men: number;
-  women: number;
+  /** 0 when the sport has no team of this gender; null when a team's
+   *  roster_size is not reported. */
+  men: number | null;
+  women: number | null;
 }
 
 export interface AthleticsSummary {
   athletesTotal: number | null;
-  athletesMen: number;
-  athletesWomen: number;
+  /** null when any contributing roster_size is not reported — never a
+   *  partial sum that counts a missing roster as 0. */
+  athletesMen: number | null;
+  athletesWomen: number | null;
   athleticAidTotal: number | null;
   avgAidPerAthlete: number | null;
   recruitingExpense: number | null;

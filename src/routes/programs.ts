@@ -18,6 +18,7 @@
  */
 
 import { Router, Request, Response } from "express";
+import { toPercent } from "../utils/fieldScale";
 import { QueryResult } from "pg";
 import pool from "../db/client";
 import { verifyToken } from "../middleware/auth";
@@ -54,12 +55,11 @@ function toStr(val: unknown): string | null {
   return s.length === 0 ? null : s;
 }
 
-function toRatePct(val: unknown): number | null {
-  const n = toNum(val);
-
-  if (n === null) return null;
-
-  return n < 2 ? Math.round(n * 100) : Math.round(n);
+// repayment.repayment_success is an integer percent (scale declared in
+// utils/fieldScale) — never multiplied, never guessed from magnitude.
+function repaymentSuccessPct(val: unknown): number | null {
+  const pct = toPercent("repayment.repayment_success", val);
+  return pct === null ? null : Math.round(pct);
 }
 
 function formatRatio(val: unknown): string | null {
@@ -79,14 +79,13 @@ function formatRatio(val: unknown): string | null {
 
 function shapeAcademics(row: AcademicsRawRow): ProgramsResponse["academics"] {
   return {
-    // completion.grad_rate_150nt_pct, already 0–100: never through toRatePct
-    // (its "< 2 → ×100" guess would turn a real 1.5% into 150%). Null when
+    // completion.grad_rate_150nt_pct, already 0–100: never multiplied. Null when
     // unpublished or the cohort is below MIN_GRAD_RATE_COHORT.
     graduation_rate: publishedGradRatePct(row),
 
     student_faculty_ratio: formatRatio(row.student_faculty_ratio),
 
-    repayment_success: toRatePct(row.repayment_success),
+    repayment_success: repaymentSuccessPct(row.repayment_success),
   };
 }
 

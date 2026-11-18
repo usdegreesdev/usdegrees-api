@@ -11,6 +11,7 @@
  */
 
 import { Router, Request, Response } from "express";
+import { toPercent } from "../utils/fieldScale";
 import pool from "../db/client";
 import {
   ApiError,
@@ -65,15 +66,16 @@ function formatRatio(val: unknown): string | null {
 }
 
 /**
- * Round a raw percentage value to the nearest integer.
- * IPEDS stores demographics_men / demographics_women as decimals (0–100).
- * If your column stores fractions (0.0–1.0), multiply by 100 first.
+ * students.demographics_* are 0–1 fractions (scale declared in
+ * utils/fieldScale); /campus serves them as a whole 0–100 percent. Never
+ * guessed from magnitude.
  */
-function toPct(val: unknown): number | null {
-  const n = toNum(val);
-  if (n === null) return null;
-  // If stored as a fraction (< 2), convert to percentage
-  return n < 2 ? Math.round(n * 100) : Math.round(n);
+function demographicPct(
+  field: "students.demographics_men" | "students.demographics_women",
+  val: unknown,
+): number | null {
+  const pct = toPercent(field, val);
+  return pct === null ? null : Math.round(pct);
 }
 
 /**
@@ -96,16 +98,18 @@ function shapeResponse(
     students: {
       grad_students: toNum(row.grad_students),
       demographics: {
-        men: toPct(row.demographics_men),
-        women: toPct(row.demographics_women),
+        men: demographicPct("students.demographics_men", row.demographics_men),
+        women: demographicPct("students.demographics_women", row.demographics_women),
       },
       faculty: {
         men: toNum(row.faculty_men),
         women: toNum(row.faculty_women),
       },
     },
+    // repayment.all_borrowers_3yr is deliberately not read or returned: it
+    // holds 100 for every one of 5,761 rows (an ingest artifact, see the
+    // column comment), so there is no real value to show.
     repayment: {
-      all_borrowers_3yr: toNum(row.all_borrowers_3yr),
       graduates_3yr: toNum(row.graduates_3yr),
       non_completers_3yr: toNum(row.non_completers_3yr),
       yr1_overall: toNum(row.yr1_overall),
@@ -142,8 +146,7 @@ const CAMPUS_STUDENTS_QUERY = `
     COALESCE(s.grad_students, NULL)          AS grad_students,
 
     -- ── Demographics ──────────────────────────────────────
-    -- Stored as 0–100 (percent) or 0.0–1.0 (fraction).
-    -- toPct() in the application layer normalises both cases.
+    -- Stored as 0–1 fractions; demographicPct() converts (utils/fieldScale).
     COALESCE(s.demographics_men, NULL)       AS demographics_men,
     COALESCE(s.demographics_women, NULL)     AS demographics_women,
 
@@ -156,7 +159,7 @@ const CAMPUS_STUDENTS_QUERY = `
     COALESCE(s.faculty_men, NULL)            AS faculty_men,
     COALESCE(s.faculty_women, NULL)          AS faculty_women,
     -- ── Repayment ─────────────────────────────────────────
-    r.all_borrowers_3yr,
+    -- all_borrowers_3yr is never selected: not real data (100 in all rows).
     r.graduates_3yr,
     r.non_completers_3yr,
     r.yr1_overall,
@@ -174,7 +177,6 @@ const CAMPUS_STUDENTS_QUERY = `
   -- Repayment data: LEFT JOIN + LATERAL LIMIT 1.
   LEFT JOIN LATERAL (
     SELECT
-      all_borrowers_3yr,
       graduates_3yr,
       non_completers_3yr,
       yr1_overall,

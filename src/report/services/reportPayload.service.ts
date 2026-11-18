@@ -21,6 +21,7 @@
 import pool from "../../db/client";
 import type { C1LitePayload } from "./reportPrompt";
 import { calculateAdmissionFit } from "../utils/admissionScore";
+import { ScaledField, toFraction, toPercent } from "../../utils/fieldScale";
 import { analyzeRoi } from "../utils/roi";
 import {
   resolveDebt,
@@ -359,22 +360,26 @@ export async function fetchCampus(unitid: number) {
   const data = studentsResult.rows[0];
   const completion = completionResult.rows[0];
   const num = (v: unknown) => (v != null ? Number(v) : null);
-  // retention_rate/demographics_* are stored as fractions (0–1, e.g. 0.395
-  // for 39.5%) — unlike grad_rate_150nt_pct, which is already 0–100.
-  const pctFromFraction = (v: unknown) =>
-    v != null ? Math.round(Number(v) * 100) : null;
+  // Scales come from utils/fieldScale (retention_rate/demographics_* are
+  // 0–1 fractions; grad_rate_150nt_pct is already 0–100).
+  const wholePct = (f: ScaledField, v: unknown) => {
+    const p = toPercent(f, v);
+    return p === null ? null : Math.round(p);
+  };
   // Demographics keep one decimal place (e.g. 39.5%) instead of rounding to
   // a whole number, per the Student Body Composition section's display.
-  const pctFromFractionDecimal = (v: unknown) =>
-    v != null ? Math.round(Number(v) * 1000) / 10 : null;
+  const oneDecimalPct = (f: ScaledField, v: unknown) => {
+    const p = toPercent(f, v);
+    return p === null ? null : Math.round(p * 10) / 10;
+  };
   return {
     enrollment_undergrad: num(data?.undergrad_12_month),
     enrollment_grad: num(data?.grad_12_month),
     student_faculty_ratio: num(data?.student_faculty_ratio),
     graduation_rate: resolveGradRate(completion),
-    retention_rate: pctFromFraction(data?.retention_rate),
-    demographics_men_pct: pctFromFractionDecimal(data?.demographics_men),
-    demographics_women_pct: pctFromFractionDecimal(data?.demographics_women),
+    retention_rate: wholePct("students.retention_rate", data?.retention_rate),
+    demographics_men_pct: oneDecimalPct("students.demographics_men", data?.demographics_men),
+    demographics_women_pct: oneDecimalPct("students.demographics_women", data?.demographics_women),
     size_category: data?.size_category ?? null,
   };
 }
@@ -474,6 +479,30 @@ export function computeDerivedFlags(
 // ------------------------------------------------------------------
 // Orchestrator
 // ------------------------------------------------------------------
+/**
+ * Newest Scorecard fetch date across the given schools, from every
+ * *_fetched_on column — never a baked-in month. null when none is recorded.
+ */
+export async function fetchDataCheckedOn(unitids: number[]): Promise<string | null> {
+  if (unitids.length === 0) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT GREATEST(
+         (SELECT max(grad_rate_fetched_on)     FROM completion                 WHERE unitid = ANY($1)),
+         (SELECT max(scorecard_api_fetched_on) FROM earnings                   WHERE unitid = ANY($1)),
+         (SELECT max(fetched_on)               FROM school_federal_aid_status  WHERE unitid = ANY($1)),
+         (SELECT max(fetched_on)               FROM scorecard_admissions_flags WHERE unitid = ANY($1))
+       ) AS data_checked_on`,
+      [unitids],
+    );
+    const v = rows[0]?.data_checked_on;
+    if (v == null) return null;
+    return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+
 export async function buildC1LitePayload(args: {
   userId: number;
   reportReferenceId: string;
@@ -483,9 +512,10 @@ export async function buildC1LitePayload(args: {
 }): Promise<C1LitePayload> {
   const { userId, reportReferenceId } = args;
 
-  const [student, meta] = await Promise.all([
+  const [student, meta, dataCheckedOn] = await Promise.all([
     fetchStudent(userId),
     fetchReportMeta(reportReferenceId),
+    fetchDataCheckedOn(args.schools.map((s) => s.unitid)),
   ]);
 
   // An explicit bracket wins; otherwise use the income range the student
@@ -552,11 +582,8 @@ export async function buildC1LitePayload(args: {
         ? Number(adm.sat_p75_math) + Number(adm.sat_p75_reading)
         : null);
 
-    // admission_rate may be fraction (0.65) or percent (65). Normalize.
-    const rawRate =
-      adm?.admission_rate != null ? Number(adm.admission_rate) : null;
-    const rateFraction =
-      rawRate == null ? null : rawRate > 1 ? rawRate / 100 : rawRate;
+    // admission_rate is a 0–1 fraction (utils/fieldScale) — never guessed.
+    const rateFraction = toFraction("admissions.admission_rate", adm?.admission_rate);
     // disc.show_admission_rate_required gates the AI narrative's prose only
     // (the model reads it directly off `disclosure` — see reportPrompt.ts
     // BRANCHES). It must NOT null out the raw figure here too: that's a
@@ -576,12 +603,9 @@ export async function buildC1LitePayload(args: {
     let fitLabel: string | null = "Not applicable";
     if (!NO_FIT_CATEGORIES.has(category) && !isSubmittedOnlyCategory(category)) {
       const fit = calculateAdmissionFit(
-        {
-          gpa: student.gpa,
-          satMath: student.sat_math,
-          satReadingWriting: student.sat_reading_writing,
-          actScore: student.act_score,
-        },
+        // The same total SAT that gates the fit below — the student's saved
+        // total, or both sections summed. Never one section doubled.
+        { satTotal: studentTotalSat },
         {
           admissionRate: rateFraction,
           satAvg:
@@ -596,7 +620,7 @@ export async function buildC1LitePayload(args: {
             adm?.sat_p75_reading != null ? Number(adm.sat_p75_reading) : null,
         },
       );
-      fitScore = fit.category === "Unavailable" ? null : fit.score;
+      fitScore = fit.score;
       fitLabel = fit.category;
       // No student test score → any Target/Match / Reach label would be
       // fabricated from the school's admit rate alone. Show a neutral label.
@@ -719,6 +743,7 @@ export async function buildC1LitePayload(args: {
       created_at: meta.created_at,
       generated_date: generatedDate,
       methodology_version: args.methodologyVersion ?? "lite-v1",
+      data_checked_on: dataCheckedOn,
     },
     student: {
       display_name: student.display_name,

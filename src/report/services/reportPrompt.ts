@@ -17,6 +17,7 @@ import type { SatPositioning } from "./satPositioning";
 import { gateSatNarrative, runSatGates } from "./satPositioningGates";
 import {
   FIT_NA_SUBMITTED_REASON,
+  FIT_UNAVAILABLE_SENTENCE,
   isSubmittedOnlyCategory,
 } from "../config/satPositioning.config";
 import { formatDebtIncomeRatio, DEBT_RATIO_BASIS } from "../utils/debtRatio";
@@ -40,6 +41,13 @@ export interface C1LitePayload {
     created_at: string;
     generated_date: string;
     methodology_version: string;
+    /**
+     * Newest College Scorecard fetch date (YYYY-MM-DD) across the report's
+     * schools — completion.grad_rate_fetched_on, earnings.scorecard_api_fetched_on,
+     * school_federal_aid_status.fetched_on, scorecard_admissions_flags.fetched_on.
+     * null when none is recorded. Drives the cover's "data checked" month.
+     */
+    data_checked_on?: string | null;
   };
   student: {
     display_name: string;
@@ -225,7 +233,10 @@ BRANCHES:
   disclosure.supporting_copy verbatim. Never describe these schools as a fit, strong fit or stretch.
 - If fit_label starts with "Not shown", the student gave no SAT score: do not name any fit
   category (no "Target/Match" or "Reach"); say fit is not shown because no SAT score was provided.
-- There is no "Safety" tier — fit_label is only "Target/Match", "Reach", "Not applicable", or "Not shown – no SAT score provided".
+- If fit_label is "Unavailable", the school publishes no SAT average or full SAT range, so no fit
+  can be calculated. Write exactly, verbatim: "${FIT_UNAVAILABLE_SENTENCE}" Do not name any fit
+  category, do not report a fit score, and do not infer one from the admit rate.
+- There is no "Safety" tier — fit_label is only "Target/Match", "Reach", "Not applicable", "Unavailable", or "Not shown – no SAT score provided".
   When fit_label is "Target/Match" or "Reach", state the published SAT range (sat_25–sat_75),
   where the student's sat_score falls relative to it, and the resulting fit_label. Always add:
   "This classification is an Admission Fit Estimate and does not represent admission
@@ -444,6 +455,12 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
           : `Academic Fit: Not applicable. ${s.disclosure.supporting_copy}`,
       };
     }
+    if (s.fit_label === "Unavailable") {
+      return {
+        school: s.display_name,
+        sentence: `${s.display_name}: ${FIT_UNAVAILABLE_SENTENCE}`,
+      };
+    }
     if (s.sat_25 == null || s.sat_75 == null || studentSat == null) {
       return {
         school: s.display_name,
@@ -580,9 +597,29 @@ export function gateGraduationRate(n: C1LiteNarrative, payload: C1LitePayload): 
   return errs;
 }
 
+/**
+ * Every school whose fit_label is "Unavailable" must have a fit sentence that
+ * copies FIT_UNAVAILABLE_SENTENCE verbatim and names no fit category — the
+ * same verbatim rule as the graduation-rate summary.
+ */
+export function gateFitUnavailable(n: C1LiteNarrative, payload: C1LitePayload): string[] {
+  const errs: string[] = [];
+  for (const s of payload.schools) {
+    if (s.fit_label !== "Unavailable") continue;
+    const entry = (n.fit_sentences ?? []).find((f) => f.school === s.display_name);
+    if (!entry || !entry.sentence.includes(FIT_UNAVAILABLE_SENTENCE)) {
+      errs.push(`Fit for ${s.display_name} is Unavailable but the sentence is not copied verbatim.`);
+    } else if (/Target\/Match|\bReach\b/.test(entry.sentence)) {
+      errs.push(`Fit for ${s.display_name} is Unavailable but names a fit category.`);
+    }
+  }
+  return errs;
+}
+
 export function runGates(n: C1LiteNarrative, payload: C1LitePayload): string[] {
   return [
     ...gateGraduationRate(n, payload),
+    ...gateFitUnavailable(n, payload),
     ...gateNumbersTraceable(n, payload).map((x) => `Orphan number: ${x}`),
     ...gateBannedVocab(n).map((x) => `Banned word: ${x}`),
     ...gateNeutrality(n),

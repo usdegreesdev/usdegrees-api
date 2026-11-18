@@ -26,9 +26,6 @@ export interface OutcomesRow {
 
   // completion (school-level: unitid only — no cip_code column in this table)
   emp_factor: number | null;
-
-  // debt_income_ratio (program-level: unitid + cip_code)
-  debt_income_ratio: number | null;
 }
 
 /**
@@ -55,7 +52,18 @@ export interface OutcomesResponse {
   completion: {
     emp_factor: number | null;
   };
+  /**
+   * School-level debt-to-income on the PDF report's basis: avg_debt ÷
+   * earnings.<DEBT_RATIO_BASIS.column>. null when either input is missing.
+   */
   debt_income_ratio: {
     debt_income_ratio: number | null;
+    avg_debt: number | null;
+    basis_earnings: number | null;
+    basis_label: string;
+    basis_api_field: string;
+    earnings_fetched_on: string | null;
+    /** The report's definition text, or null without a fetch date. */
+    definition: string | null;
   };
 }

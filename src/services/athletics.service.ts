@@ -30,26 +30,30 @@ function toNum(val: unknown): number | null {
  */
 function buildRoster(rows: AthleticSportsRow[]): {
   roster: AthleticsRosterEntry[];
-  athletesMen: number;
-  athletesWomen: number;
+  athletesMen: number | null;
+  athletesWomen: number | null;
 } {
   const bySport = new Map<string, AthleticsRosterEntry>();
-  let athletesMen = 0;
-  let athletesWomen = 0;
+  // A missing roster_size makes every sum it feeds missing — never a 0.
+  // (A sport with no row for a gender has no team: that 0 is real.)
+  const add = (a: number | null, b: number | null) =>
+    a === null || b === null ? null : a + b;
+  let athletesMen: number | null = 0;
+  let athletesWomen: number | null = 0;
 
   for (const row of rows) {
-    const size = toNum(row.roster_size) ?? 0;
+    const size = toNum(row.roster_size);
     let entry = bySport.get(row.sport);
     if (!entry) {
       entry = { sport: row.sport, men: 0, women: 0 };
       bySport.set(row.sport, entry);
     }
     if (row.gender === "Men") {
-      entry.men += size;
-      athletesMen += size;
+      entry.men = add(entry.men, size);
+      athletesMen = add(athletesMen, size);
     } else if (row.gender === "Women") {
-      entry.women += size;
-      athletesWomen += size;
+      entry.women = add(entry.women, size);
+      athletesWomen = add(athletesWomen, size);
     }
   }
 

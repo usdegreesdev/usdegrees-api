@@ -185,7 +185,7 @@ export default function Cover({ payload, reportId, logoDataUri }: CoverProps) {
             {detail("PREPARED FOR", m.studentName, m.cityState)}
             {detail(
               "DATA LAST CHECKED",
-              m.dataChecked,
+              m.dataChecked ?? "Not published",
               COVER_COPY.dataCheckedNote,
             )}
             {detail(
