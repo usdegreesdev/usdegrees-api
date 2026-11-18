@@ -2,6 +2,7 @@ import React from "react";
 import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
+import { GRAD_RATE_LABEL, GRAD_RATE_MEASURES } from "../utils/gradRate";
 
 export interface SourcesMethodologyProps {
   payload: C1LitePayload;
@@ -23,7 +24,7 @@ const SOURCES: SourceRow[] = [
     source: "College Scorecard API",
     domain: "collegescorecard.ed.gov",
     usedFor:
-      "University Details, Academic Data, Completion Rates, Median Debt, Graduation Rate, Admission Rate, SAT Ranges, Retention, Net Price by Household Income Range",
+      `University Details, Academic Data, Median Debt, Graduation Rate, Admission Rate, SAT Ranges, Retention, Net Price by Household Income Range. Graduation rate is the ${GRAD_RATE_LABEL.toLowerCase()} for ${GRAD_RATE_MEASURES}; it excludes part-time and transfer-in students and counts students who transfer out as non-completers.`,
     notes: "U.S. Dept. of Education",
   },
   {

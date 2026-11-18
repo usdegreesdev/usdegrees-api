@@ -4,7 +4,9 @@
 
 /** Raw scalar row: one row from the 3-table JOIN */
 export interface AcademicsRawRow {
-  completion_rate: number | null;
+  // completion.grad_rate_150nt_pct (already a percent) + its cohort
+  grad_rate_150nt_pct: number | string | null;
+  grad_rate_cohort: number | null;
   student_faculty_ratio: number | null;
   repayment_success: number | null;
 }

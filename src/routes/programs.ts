@@ -32,6 +32,7 @@ import {
   ApiError,
 } from "../types/programs";
 import { sendError, sendInternalError } from "../utils/apiError";
+import { publishedGradRatePct } from "../report/utils/gradRate";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -78,7 +79,10 @@ function formatRatio(val: unknown): string | null {
 
 function shapeAcademics(row: AcademicsRawRow): ProgramsResponse["academics"] {
   return {
-    graduation_rate: toRatePct(row.completion_rate),
+    // completion.grad_rate_150nt_pct, already 0–100: never through toRatePct
+    // (its "< 2 → ×100" guess would turn a real 1.5% into 150%). Null when
+    // unpublished or the cohort is below MIN_GRAD_RATE_COHORT.
+    graduation_rate: publishedGradRatePct(row),
 
     student_faculty_ratio: formatRatio(row.student_faculty_ratio),
 
@@ -119,14 +123,15 @@ function shapeDegreeLevels(
 
 const ACADEMICS_QUERY = `
   SELECT
-    comp.completion_rate,
+    comp.grad_rate_150nt_pct,
+    comp.grad_rate_cohort,
 
     stu.student_faculty_ratio,
 
     rep.repayment_success
 
   FROM (
-    SELECT completion_rate
+    SELECT grad_rate_150nt_pct, grad_rate_cohort
     FROM completion
     WHERE unitid = $1
     LIMIT 1

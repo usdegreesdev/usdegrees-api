@@ -3,6 +3,7 @@ import pool from "../db/client";
 import { OverviewRow, OverviewResponse } from "../types/overview";
 import { normalizeEarningsFillMethod } from "../types/earnings";
 import { sendError, sendInternalError } from "../utils/apiError";
+import { publishedGradRatePct } from "../report/utils/gradRate";
 
 // ---------------------------------------------------------------------------
 // Helper — safely coerce nullable numeric DB values
@@ -126,7 +127,8 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
       st.fafsa_applications       AS fafsa_applications,
 
       -- ── Completion ────────────────────────────────────────────────────
-      co.completion_rate          AS completion_rate,
+      co.grad_rate_150nt_pct      AS grad_rate_150nt_pct,
+      co.grad_rate_cohort         AS grad_rate_cohort,
 
       -- ── Earnings (program-level) ───────────────────────────────────────
       ec.year_1                   AS year_1,
@@ -269,7 +271,10 @@ router.get("/:unitid/:cip_code", async (req: Request, res: Response) => {
         fafsa_applications: safeNum(row.fafsa_applications),
       },
       completion: {
-        completion_rate: safeNum(row.completion_rate),
+        // Key kept for the frontend; value is the graduation rate within 150%
+        // of normal time (grad_rate_150nt_pct, 0–100), never the deprecated
+        // completion_rate column. Null when unpublished or cohort < 10.
+        completion_rate: publishedGradRatePct(row),
       },
       earnings: {
         year_1: safeNum(row.year_1),

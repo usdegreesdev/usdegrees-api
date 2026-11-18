@@ -3,6 +3,7 @@ import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 import NoAidBox from "./NoAidBox";
+import GradRateCell from "./GradRateCell";
 import {
   schoolFigures,
   takesNoFederalAid,
@@ -210,6 +211,9 @@ export default function StudentProfile({
                 style={{ padding: "10px", fontWeight: 600, textAlign: "right" }}
               >
                 Graduation Rate
+                <div style={{ fontSize: "8.5px", fontWeight: 400 }}>
+                  within 150% of normal time
+                </div>
               </th>
               <th
                 style={{ padding: "10px", fontWeight: 600, textAlign: "right" }}
@@ -283,10 +287,7 @@ export default function StudentProfile({
                     fontWeight: "bold",
                   }}
                 >
-                  {(() => {
-                    const gradRate = graduationRateByUnitid.get(s.unitid);
-                    return gradRate != null ? `${gradRate}%` : "Not published";
-                  })()}
+                  <GradRateCell rate={graduationRateByUnitid.get(s.unitid)} />
                 </td>
                 <td
                   style={{

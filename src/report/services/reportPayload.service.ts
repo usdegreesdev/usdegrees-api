@@ -42,6 +42,12 @@ import {
   schoolFigures,
   type FederalAidStatus,
 } from "../utils/missingValue";
+import {
+  GRAD_RATE_COLUMNS,
+  GRAD_RATE_METHODOLOGY,
+  resolveGradRate,
+  graduationRateSummary,
+} from "../utils/gradRate";
 
 // ---- vintage constants (no DB columns yet) -----------------------
 const NET_PRICE_VINTAGE = "College Scorecard, October 2026 update";
@@ -333,11 +339,11 @@ async function fetchSchool(unitid: number) {
 // ------------------------------------------------------------------
 // Campus & student body (students table) — school-level, not program-level.
 // ------------------------------------------------------------------
-async function fetchCampus(unitid: number) {
-  // students.graduation_rate is always null in this DB — the real figure
-  // lives in the completion table (already 0–100, not a fraction), same
-  // source routes/compare.ts and routes/programs.ts read graduation rate
-  // from.
+export async function fetchCampus(unitid: number) {
+  // Graduation rate: completion.grad_rate_150nt_pct + grad_rate_cohort only
+  // (see utils/gradRate.ts). completion_rate / emp_factor / completed_*yrs
+  // are deprecated and are deliberately not selected, so they can't leak
+  // into the payload or the AI prompt.
   const [studentsResult, completionResult] = await Promise.all([
     pool.query(
       `SELECT undergrad_12_month, grad_12_month, student_faculty_ratio,
@@ -346,7 +352,7 @@ async function fetchCampus(unitid: number) {
       [unitid],
     ),
     pool.query(
-      `SELECT completion_rate FROM completion WHERE unitid = $1 LIMIT 1`,
+      `SELECT ${GRAD_RATE_COLUMNS.join(", ")} FROM completion WHERE unitid = $1 LIMIT 1`,
       [unitid],
     ),
   ]);
@@ -354,7 +360,7 @@ async function fetchCampus(unitid: number) {
   const completion = completionResult.rows[0];
   const num = (v: unknown) => (v != null ? Number(v) : null);
   // retention_rate/demographics_* are stored as fractions (0–1, e.g. 0.395
-  // for 39.5%) — unlike completion_rate, which is already 0–100.
+  // for 39.5%) — unlike grad_rate_150nt_pct, which is already 0–100.
   const pctFromFraction = (v: unknown) =>
     v != null ? Math.round(Number(v) * 100) : null;
   // Demographics keep one decimal place (e.g. 39.5%) instead of rounding to
@@ -365,10 +371,7 @@ async function fetchCampus(unitid: number) {
     enrollment_undergrad: num(data?.undergrad_12_month),
     enrollment_grad: num(data?.grad_12_month),
     student_faculty_ratio: num(data?.student_faculty_ratio),
-    graduation_rate:
-      completion?.completion_rate != null
-        ? Math.round(Number(completion.completion_rate))
-        : null,
+    graduation_rate: resolveGradRate(completion),
     retention_rate: pctFromFraction(data?.retention_rate),
     demographics_men_pct: pctFromFractionDecimal(data?.demographics_men),
     demographics_women_pct: pctFromFractionDecimal(data?.demographics_women),
@@ -746,6 +749,10 @@ export async function buildC1LitePayload(args: {
       debtRatioRefreshed(out, generatedDate),
     ),
     derived_flags: computeDerivedFlags(studentTotalSat, out, roi20YrByName),
+    // Same sentence the fallback narrative uses; the AI must copy it verbatim
+    // if it mentions graduation rate at all.
+    graduation_rate_definition: GRAD_RATE_METHODOLOGY,
+    graduation_rate_summary: graduationRateSummary(college_details),
     college_details,
     sat_positioning,
   };

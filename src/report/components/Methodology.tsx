@@ -8,6 +8,7 @@ import {
   debtRatioRefreshed,
 } from "../utils/debtRatio";
 import { STICKER_METHODOLOGY } from "../utils/stickerPrice";
+import { GRAD_RATE_METHODOLOGY } from "../utils/gradRate";
 import { missingFiguresMethodology } from "../utils/missingValue";
 
 export interface MethodologyProps {
@@ -80,6 +81,10 @@ export default function Methodology({
               </div>
               <div>
                 <strong>• Debt-to-Income Ratio:</strong> {debtRatioMethodology()}
+              </div>
+              <div>
+                <strong>• {GRAD_RATE_METHODOLOGY.split(":")[0]}:</strong>
+                {GRAD_RATE_METHODOLOGY.slice(GRAD_RATE_METHODOLOGY.indexOf(":") + 1)}
               </div>
               <div>
                 <strong>• {STICKER_METHODOLOGY.split(":")[0]}:</strong>

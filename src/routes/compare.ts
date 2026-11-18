@@ -7,6 +7,7 @@ import { AthleticsProfile } from "../types/athletics";
 import { EarningsAvgSalaryResolved } from "../types/earnings";
 import { getEarningsForProgram } from "../services/earnings.service";
 import { sendInternalError } from "../utils/apiError";
+import { publishedGradRatePct } from "../report/utils/gradRate";
 
 const router = Router();
 
@@ -124,7 +125,7 @@ interface SelectedItem {
   academics: {
     satRangeLow: number | null; // admissions.school_min_range (or summed p25 math+reading)
     satRangeHigh: number | null; // admissions.school_max_range (or summed p75 math+reading)
-    graduationRate: number | null; // completion.completion_rate (raw fraction, same convention as acceptanceRate)
+    graduationRate: number | null; // completion.grad_rate_150nt_pct, already 0–100 (NOT a fraction); null when unpublished or cohort < MIN_GRAD_RATE_COHORT
   };
   cost: {
     tuitionOutState: number | null; // costs.tuition_out_state
@@ -296,7 +297,8 @@ async function getSelectedEnriched(
         ad.sat_p75_math        AS sat_p75_math,
         ad.sat_p25_reading     AS sat_p25_reading,
         ad.sat_p75_reading     AS sat_p75_reading,
-        comp.completion_rate   AS completion_rate,
+        comp.grad_rate_150nt_pct AS grad_rate_150nt_pct,
+        comp.grad_rate_cohort  AS grad_rate_cohort,
         c.tuition_in_state     AS tuition_in_state,
         c.tuition_out_state    AS tuition_out_state,
         c.sticker_price_by_api AS sticker_price,
@@ -328,7 +330,7 @@ async function getSelectedEnriched(
           FROM admissions WHERE unitid = sel.unitid LIMIT 1
      ) ad ON TRUE
      LEFT JOIN LATERAL (
-        SELECT completion_rate FROM completion WHERE unitid = sel.unitid LIMIT 1
+        SELECT grad_rate_150nt_pct, grad_rate_cohort FROM completion WHERE unitid = sel.unitid LIMIT 1
      ) comp ON TRUE
      LEFT JOIN LATERAL (
         SELECT tuition_in_state, tuition_out_state, sticker_price_by_api
@@ -504,7 +506,7 @@ async function getSelectedEnriched(
       academics: {
         satRangeLow: sat25,
         satRangeHigh: sat75,
-        graduationRate: toFloat(row.completion_rate),
+        graduationRate: publishedGradRatePct(row),
       },
       cost: {
         tuitionOutState: toFloat(row.tuition_out_state),
@@ -1043,7 +1045,8 @@ async function getMatrixEnrichedRows(
         ad.sat_p75_math        AS sat_p75_math,
         ad.sat_p25_reading     AS sat_p25_reading,
         ad.sat_p75_reading     AS sat_p75_reading,
-        comp.completion_rate   AS completion_rate,
+        comp.grad_rate_150nt_pct AS grad_rate_150nt_pct,
+        comp.grad_rate_cohort  AS grad_rate_cohort,
         c.tuition_in_state     AS tuition_in_state,
         c.tuition_out_state    AS tuition_out_state,
         c.sticker_price_by_api AS sticker_price,
@@ -1074,7 +1077,7 @@ async function getMatrixEnrichedRows(
           FROM admissions WHERE unitid = entries.unitid LIMIT 1
      ) ad ON TRUE
      LEFT JOIN LATERAL (
-        SELECT completion_rate FROM completion WHERE unitid = entries.unitid LIMIT 1
+        SELECT grad_rate_150nt_pct, grad_rate_cohort FROM completion WHERE unitid = entries.unitid LIMIT 1
      ) comp ON TRUE
      LEFT JOIN LATERAL (
         SELECT tuition_in_state, tuition_out_state, sticker_price_by_api
@@ -1244,7 +1247,7 @@ async function getMatrixEnrichedRows(
       academics: {
         satRangeLow: sat25,
         satRangeHigh: sat75,
-        graduationRate: toFloat(row.completion_rate),
+        graduationRate: publishedGradRatePct(row),
       },
       cost: {
         tuitionOutState: toFloat(row.tuition_out_state),

@@ -47,8 +47,9 @@ export interface OverviewRow {
   retention_rate: number | null;
   fafsa_applications: number | null;
 
-  // completion
-  completion_rate: number | null;
+  // completion: grad_rate_150nt_pct (already a percent) + its cohort
+  grad_rate_150nt_pct: number | string | null;
+  grad_rate_cohort: number | null;
 
   // earnings_against_courses_merged (keyed by unitid + cip_code)
   year_1: number | null;
@@ -110,6 +111,8 @@ export interface OverviewResponse {
     fafsa_applications: number | null;
   };
   completion: {
+    // Key kept for the frontend contract. Value is the published
+    // grad_rate_150nt_pct (0–100), or null when unpublished / cohort < 10.
     completion_rate: number | null;
   };
   earnings: {

@@ -26,6 +26,12 @@ import {
   type FigureCompleteness,
   type SchoolFigures,
 } from "../utils/missingValue";
+import {
+  GRAD_RATE_LABEL,
+  GRAD_RATE_MEASURES,
+  graduationRateSummary,
+  type GradRate,
+} from "../utils/gradRate";
 
 // ---------------- PAYLOAD (built by reportPayload.service) ----------------
 export interface C1LitePayload {
@@ -109,6 +115,11 @@ export interface C1LitePayload {
   // Plain-text definition of the debt-to-income figures (same text as the
   // methodology page block; see debtRatioDefinitions).
   debt_income_ratio_definition: string;
+  // What the graduation rate measures (same text as the methodology page).
+  graduation_rate_definition?: string;
+  // One sentence with every college's graduation rate display string, shared
+  // verbatim by the AI prompt and the fallback narrative.
+  graduation_rate_summary?: string;
   college_details: Array<{
     unitid: string;
     name: string;
@@ -120,7 +131,9 @@ export interface C1LitePayload {
       enrollment_undergrad: number | null;
       enrollment_grad: number | null;
       student_faculty_ratio: number | null;
-      graduation_rate: number | null;
+      // completion.grad_rate_150nt_pct + grad_rate_cohort, resolved by
+      // utils/gradRate.ts (value-or-reason). Never completion_rate.
+      graduation_rate: GradRate;
       retention_rate: number | null;
       demographics_men_pct: number | null;
       demographics_women_pct: number | null;
@@ -175,11 +188,11 @@ platform. Plain English, ~9th-grade reading level. You NEVER rank, recommend, pr
 or criticize a school. You price schools and describe outcomes; families decide.
 
 This is the C1-LITE edition. You have sticker price, net price, admission, earnings,
-typical debt at completion (avg_debt) and a school-level debt-to-income ratio
-(debt_income_ratio) supplied as data. You have NO
-funding gap, NO loan forecast, NO monthly payment / PLUS projection, NO campus-safety,
-graduation-rate, or trajectory data — never mention or invent any of those. avg_debt is a
-reported typical figure, NOT a projection you compute.
+typical debt at completion (avg_debt), a school-level debt-to-income ratio
+(debt_income_ratio) and a school-level graduation rate (see GRADUATION RATE) supplied as
+data. You have NO funding gap, NO loan forecast, NO monthly payment / PLUS projection, NO
+campus-safety, completion-rate, employment-rate or trajectory data — never mention or invent
+any of those. avg_debt is a reported typical figure, NOT a projection you compute.
 
 HARD RULES (a violation fails the report):
 R1. Every number you write must appear character-for-character in the DATA PAYLOAD, except
@@ -243,6 +256,14 @@ cost of attendance, year in scorecard_avg_coa_year). A scenario with published=f
 and lists its missing components. Describe these only as given. Never call a scenario total
 "Scorecard's price" or "the Scorecard figure", never combine or compare the three figures or state
 a difference between them, and never describe a missing figure as $0.
+
+GRADUATION RATE: the only graduation figure is college_details[].campus.graduation_rate. It is
+the ${GRAD_RATE_LABEL.toLowerCase()} for ${GRAD_RATE_MEASURES}; graduation_rate_definition
+explains it. You do not need to mention it. If you mention graduation rate anywhere, copy
+graduation_rate_summary verbatim, character for character, and write no other graduation
+figure, cohort size or reason. Never call it a completion rate, never describe a rate that is
+not published as 0% or as blank, never rank or compare schools by it, and never say whether a
+rate is good, bad, high or low.
 
 IDENTITY: the same college may appear more than once in "schools" when the family compared
 it under different programs. Always use each school entry's exact "display_name" string
@@ -360,6 +381,16 @@ export function costOfAttendanceNote(payload: C1LitePayload): string {
   return parts.length ? ` ${parts.join(" ")}` : "";
 }
 
+// The graduation-rate sentence: the payload's own string when present (the
+// one the AI is told to copy), else rebuilt from college_details the same way.
+export function gradRateSummaryFor(payload: C1LitePayload): string {
+  if (payload.graduation_rate_summary != null) return payload.graduation_rate_summary;
+  const withRate = (payload.college_details ?? []).filter(
+    (c) => c?.campus?.graduation_rate && typeof c.campus.graduation_rate === "object",
+  );
+  return graduationRateSummary(withRate);
+}
+
 export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative {
   const { schools, derived_flags, student } = payload;
 
@@ -392,7 +423,10 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     student.sat_score == null ? "No SAT score was provided, so academic fit is not shown." : "Academic fit is shown where the disclosure category allows it."
   }`;
 
-  const analyst_note = `This report evaluates ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures. Most figures come directly from public federal datasets. Where Census PSEO program earnings data is unavailable, clearly labelled estimates may be generated using real reported earnings and program-level trends, rather than the raw dataset alone. Estimates are never chained from other estimates and are not presented as official Census-published figures. Where a figure is not published and no valid real-data anchor exists, it is shown as "Not Published" rather than substituted with an estimate or typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
+  const gradSummary = gradRateSummaryFor(payload);
+  const analyst_note_base = `This report evaluates ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures. Most figures come directly from public federal datasets. Where Census PSEO program earnings data is unavailable, clearly labelled estimates may be generated using real reported earnings and program-level trends, rather than the raw dataset alone. Estimates are never chained from other estimates and are not presented as official Census-published figures. Where a figure is not published and no valid real-data anchor exists, it is shown as "Not Published" rather than substituted with an estimate or typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
+  // AnalystNote splits on blank lines, so the graduation sentence is its own paragraph.
+  const analyst_note = gradSummary ? `${analyst_note_base}\n\n${gradSummary}` : analyst_note_base;
 
   const net_price_note =
     (student.income_bracket_label
@@ -520,8 +554,35 @@ export function gateBranchConsistency(n: C1LiteNarrative, payload: C1LitePayload
     errs.push("Merit language present but merit_flag_schools is empty.");
   return errs;
 }
+function narrativeText(n: C1LiteNarrative): string {
+  const out: string[] = [];
+  const walk = (v: unknown) => {
+    if (typeof v === "string") out.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  };
+  walk(n);
+  return out.join("\n");
+}
+
+// Graduation rate may be omitted, but any mention must be the shared sentence
+// verbatim, and the deprecated "completion rate" framing never appears.
+export function gateGraduationRate(n: C1LiteNarrative, payload: C1LitePayload): string[] {
+  const errs: string[] = [];
+  const text = narrativeText(n);
+  if (/completion rate/i.test(text)) errs.push('Graduation rate described as a "completion rate".');
+  if (/graduation rate|graduat\w* within 150%/i.test(text)) {
+    const summary = gradRateSummaryFor(payload);
+    if (!summary || !text.includes(summary)) {
+      errs.push("Graduation rate mentioned without copying graduation_rate_summary verbatim.");
+    }
+  }
+  return errs;
+}
+
 export function runGates(n: C1LiteNarrative, payload: C1LitePayload): string[] {
   return [
+    ...gateGraduationRate(n, payload),
     ...gateNumbersTraceable(n, payload).map((x) => `Orphan number: ${x}`),
     ...gateBannedVocab(n).map((x) => `Banned word: ${x}`),
     ...gateNeutrality(n),

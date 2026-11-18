@@ -2,6 +2,8 @@ import React from "react";
 import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
+import GradRateCell from "./GradRateCell";
+import { GRAD_RATE_LABEL, GRAD_RATE_MEASURES, MIN_GRAD_RATE_COHORT } from "../utils/gradRate";
 
 export interface CampusStudentsProps {
   payload: C1LitePayload;
@@ -54,9 +56,9 @@ export default function CampusStudents({
             margin: "0 0 20px 0",
           }}
         >
-          Enrollment, class composition, and outcome rates as reported to IPEDS.
-          These figures describe the institution overall, not any specific
-          program.
+          Enrollment, class composition, and retention as reported to IPEDS;
+          graduation rate from College Scorecard. These figures describe the
+          institution overall, not any specific program.
         </p>
 
         <table
@@ -96,6 +98,9 @@ export default function CampusStudents({
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
               >
                 Graduation Rate
+                <div style={{ fontSize: "8.5px", fontWeight: 400 }}>
+                  within 150% of normal time
+                </div>
               </th>
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
@@ -159,7 +164,7 @@ export default function CampusStudents({
                     color: theme.color.ink,
                   }}
                 >
-                  {pct(c.campus.graduation_rate)}
+                  <GradRateCell rate={c.campus.graduation_rate} />
                 </td>
                 <td
                   style={{
@@ -186,7 +191,10 @@ export default function CampusStudents({
           Undergraduate and graduate enrollment figures reflect the unduplicated
           count of students enrolled at any point during the most recent
           12-month reporting period (not a single-day snapshot), as reported by
-          the institution to IPEDS.
+          the institution to IPEDS. {GRAD_RATE_LABEL}: {GRAD_RATE_MEASURES}, from
+          College Scorecard; it excludes part-time and transfer-in students and
+          counts students who transfer out as non-completers. Rates based on
+          fewer than {MIN_GRAD_RATE_COHORT} students are not published.
         </p>
 
         <h3
