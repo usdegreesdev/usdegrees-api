@@ -18,6 +18,13 @@ function num(v: number | null): string {
   return v != null ? v.toLocaleString() : "Not published";
 }
 
+// Division averages use one rule everywhere: one decimal place.
+function avg1(v: number | null): string {
+  return v != null
+    ? v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+    : "Not published";
+}
+
 /**
  * maxItems of null means no cap — used when three or fewer institutions share
  * the page and there is room to print every sport rather than trailing off
@@ -95,10 +102,10 @@ export default function Athletics({
             margin: compact ? "0 0 12px 0" : "0 0 20px 0",
           }}
         >
-          Sourced from EADA (Equity in Athletics Data Analysis) filings, the
+          Sourced from Equity in Athletics Disclosure Act (EADA) filings, the
           most recent survey year on file per institution. Shown for
           informational context only — not a factor in academic fit or cost
-          comparisons elsewhere in this report.
+          comparisons elsewhere in this report. Roster spots count an athlete once for each sport; unduplicated athletes is the EADA total of individual athletes.
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: compact ? "8px" : "14px" }}>
@@ -226,11 +233,14 @@ export default function Athletics({
                         fontWeight: 700,
                       }}
                     >
-                      Athletes (M / W)
+                      Roster spots (M / W)
                     </div>
                     <div style={{ color: theme.color.ink, fontWeight: 700 }}>
                       {num(a.summary.athletesMen)} /{" "}
                       {num(a.summary.athletesWomen)}
+                    </div>
+                    <div style={{ color: theme.color.inkMuted, fontSize: compact ? "8px" : "9px" }}>
+                      Unduplicated athletes: {num(a.summary.athletesTotal)}
                     </div>
                   </div>
                   <div>
@@ -310,6 +320,19 @@ export default function Athletics({
                   </div>
                 )}
 
+                {a.summary.athleticRevenue != null &&
+                  a.summary.athleticRevenue === a.summary.athleticExpense && (
+                    <div
+                      style={{
+                        fontSize: compact ? "8.5px" : "9.5px",
+                        color: theme.color.inkFaint,
+                        paddingBottom: "6px",
+                      }}
+                    >
+                      Revenue equals expense as reported to EADA.
+                    </div>
+                  )}
+
                 {a.divisionBenchmark && (
                   <div
                     style={{
@@ -319,7 +342,7 @@ export default function Athletics({
                       paddingTop: "8px",
                     }}
                   >
-                    {a.divisionBenchmark.division} division average: {num(a.divisionBenchmark.avgAthletesTotal)} athletes, {money(a.divisionBenchmark.avgAidPerAthlete)} aid/athlete
+                    {a.divisionBenchmark.division} division average: {avg1(a.divisionBenchmark.avgAthletesTotal)} athletes, {money(a.divisionBenchmark.avgAidPerAthlete)} aid/athlete
                   </div>
                 )}
               </div>

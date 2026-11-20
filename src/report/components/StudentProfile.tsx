@@ -123,22 +123,13 @@ export default function StudentProfile({
               padding: "18px",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px",
-                fontSize: "12px",
-              }}
-            >
-              <div>
-                <span style={{ color: theme.color.inkMuted }}>
-                  High school:{" "}
-                </span>
-                <strong style={{ color: theme.color.ink }}>
-                  {student.high_school_name ?? "Not provided"}
-                </strong>
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px" }}>
+              {student.high_school_name?.trim() && (
+                <div>
+                  <span style={{ color: theme.color.inkMuted }}>High school: </span>
+                  <strong style={{ color: theme.color.ink }}>{student.high_school_name.trim()}</strong>
+                </div>
+              )}
               <div>
                 <span style={{ color: theme.color.inkMuted }}>Email: </span>
                 <strong style={{ color: theme.color.ink, wordBreak: "break-all" }}>
@@ -147,9 +138,7 @@ export default function StudentProfile({
               </div>
               <div>
                 <span style={{ color: theme.color.inkMuted }}>Address: </span>
-                <strong style={{ color: theme.color.ink }}>
-                  {student.address ?? "Not provided"}
-                </strong>
+                <strong style={{ color: theme.color.ink }}>{student.address ?? "Not provided"}</strong>
               </div>
             </div>
           </div>

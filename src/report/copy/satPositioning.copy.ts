@@ -26,7 +26,7 @@ export const satCopy = {
     below: "Below range",
   },
   detail: {
-    above: "Higher than about 3 in 4 enrolled students who reported scores",
+    above: "Above the 75th percentile of enrolled students who reported scores",
     within: (pct: number) => `${pct}% of the way through the middle 50%`,
     below: "Most enrolled students who reported scores scored higher",
   },
@@ -38,7 +38,7 @@ export const satCopy = {
     below: "Below the range of students who submitted scores",
   },
   submittedDetail: {
-    above: "Higher than about 3 in 4 students who submitted scores",
+    above: "Above the 75th percentile of students who submitted scores",
     within: (pct: number) => `${pct}% of the way through the middle 50%`,
     below: "Most students who submitted scores scored higher",
   },
@@ -71,7 +71,7 @@ export const satCopy = {
 
 /**
  * Every number that appears in the static copy above (digits inside
- * templates, e.g. "3 in 4", "50%", "400–1600"). The rendered-number gate
+ * templates, e.g. "75th", "50%", "400–1600"). The rendered-number gate
  * treats these as legitimate in addition to payload values.
  */
 export function satCopyNumbers(): Set<string> {

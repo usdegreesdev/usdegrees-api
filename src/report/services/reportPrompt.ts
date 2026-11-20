@@ -14,13 +14,19 @@
 
 import type { AthleticsProfile } from "../../types/athletics";
 import type { SatPositioning } from "./satPositioning";
+import { dataYearsSentence, type DataVintage } from "../utils/dataVintage";
 import { gateSatNarrative, runSatGates } from "./satPositioningGates";
 import {
   FIT_NA_SUBMITTED_REASON,
   FIT_UNAVAILABLE_SENTENCE,
   isSubmittedOnlyCategory,
 } from "../config/satPositioning.config";
-import { formatDebtIncomeRatio, DEBT_RATIO_BASIS } from "../utils/debtRatio";
+import {
+  formatDebtIncomeRatio,
+  DEBT_RATIO_BASIS,
+  DEBT_LABEL,
+  DEBT_VS_EARNINGS_NOTE,
+} from "../utils/debtRatio";
 import { scenarioDisplay, type StickerScenario } from "../utils/stickerPrice";
 import {
   schoolFigures,
@@ -94,7 +100,13 @@ export interface C1LitePayload {
     // First-year (1 year after graduation) earnings and its cohort year, for
     // the page-4 context line. Null when not published.
     earnings_year_1?: number | null; earnings_year_1_vintage?: number | null;
-    earnings_method_flag: string | null; roi_ratio: string | null;
+    earnings_method_flag: string | null;
+    // Year 5 of the same cohort row as program_earnings (year 10).
+    earnings_year_5?: number | null;
+    // Newest cohort's year 1 — its own labelled line, never mixed into the row above.
+    earnings_latest_year_1?: number | null; earnings_latest_year_1_cohort?: number | null;
+    // True only when a printed earnings value is a modelled estimate.
+    earnings_estimated?: boolean;
     sticker_price: number | null; sticker_vintage: string | null;
     avg_debt: number | null; debt_income_ratio: number | null;
     debt_income_ratio_display: string | null; debt_vintage: string | null;
@@ -113,8 +125,7 @@ export interface C1LitePayload {
   // Latest school_federal_aid_status.fetched_on among the report's schools.
   federal_aid_fetched_on?: string | null;
   derived_flags: {
-    merit_flag_schools: string[]; reach_flag_schools: string[];
-    best_roi_school: string;
+    above_p75_schools: string[]; below_p25_schools: string[];
   };
   // College-level detail (NOT program-specific) — exactly one entry per
   // unique unitid, even when that college appears multiple times in
@@ -123,6 +134,8 @@ export interface C1LitePayload {
   // Plain-text definition of the debt-to-income figures (same text as the
   // methodology page block; see debtRatioDefinitions).
   debt_income_ratio_definition: string;
+  // Scorecard data years per metric + the release the DB holds (scorecard_data_vintage / scorecard_release).
+  data_vintage?: DataVintage;
   // What the graduation rate measures (same text as the methodology page).
   graduation_rate_definition?: string;
   // One sentence with every college's graduation rate display string, shared
@@ -145,6 +158,8 @@ export interface C1LitePayload {
       retention_rate: number | null;
       demographics_men_pct: number | null;
       demographics_women_pct: number | null;
+      no_graduate_programs: boolean; // grad_12_month null AND max programs.credential_level <= 4
+      size: number | null; // students.size — the number the size label is based on
       size_category: string | null;
     };
     tuition: {
@@ -178,13 +193,13 @@ export interface C1LitePayload {
 // ---------------- NARRATIVE (what Gemini returns) ----------------
 export interface C1LiteNarrative {
   two_minute_lines: Array<{ school: string; line: string }>;
-  critical_finding: string;
+  score_position_note: string;
   executive_summary: string;
   analyst_note: string;
   net_price_note: string;
   fit_sentences: Array<{ school: string; sentence: string }>;
   earnings_paragraph: string;
-  debt_burden_paragraph: string; // typical debt + debt-to-income only; NO loan forecast
+  debt_burden_paragraph: string; // school-wide median federal debt of completers + debt-to-income only; NO loan forecast
   plain_english_question: string; // neutral decision framing — NOT a recommendation
 }
 
@@ -196,11 +211,11 @@ platform. Plain English, ~9th-grade reading level. You NEVER rank, recommend, pr
 or criticize a school. You price schools and describe outcomes; families decide.
 
 This is the C1-LITE edition. You have sticker price, net price, admission, earnings,
-typical debt at completion (avg_debt), a school-level debt-to-income ratio
+school-wide ${DEBT_LABEL} (avg_debt), a school-level debt-to-income ratio
 (debt_income_ratio) and a school-level graduation rate (see GRADUATION RATE) supplied as
 data. You have NO funding gap, NO loan forecast, NO monthly payment / PLUS projection, NO
 campus-safety, completion-rate, employment-rate or trajectory data — never mention or invent
-any of those. avg_debt is a reported typical figure, NOT a projection you compute.
+any of those. avg_debt is the school-wide ${DEBT_LABEL} as Scorecard reports it, NOT a projection you compute. Always call it "school-wide median federal debt of completers".
 
 HARD RULES (a violation fails the report):
 R1. Every number you write must appear character-for-character in the DATA PAYLOAD, except
@@ -228,9 +243,9 @@ BRANCHES:
   disclosure.supporting_copy verbatim, explaining why a test-score-based fit classification
   cannot be calculated. Do not report a fit score.
 - If fit_label is "Not applicable" and sat_data_category is "H_TEST_CONSIDERED" or
-  "C_TEST_OPTIONAL", the reason is exactly: "Fit is not applicable: test scores are optional or
-  considered if submitted." Use it in place of any wording that implies open admission, then the
-  disclosure.supporting_copy verbatim. Never describe these schools as a fit, strong fit or stretch.
+  "C_TEST_OPTIONAL", write the school's disclosure.badge_label followed by "fit is not applicable",
+  then the disclosure.supporting_copy verbatim. Use no other wording for it and never imply open
+  admission. Never describe these schools as a fit, strong fit or stretch.
 - If fit_label starts with "Not shown", the student gave no SAT score: do not name any fit
   category (no "Target/Match" or "Reach"); say fit is not shown because no SAT score was provided.
 - If fit_label is "Unavailable", the school publishes no SAT average or full SAT range, so no fit
@@ -242,10 +257,10 @@ BRANCHES:
   "This classification is an Admission Fit Estimate and does not represent admission
   probability or likelihood of acceptance. Check the school's website for current admission
   requirements." Never phrase a category as a chance or likelihood of getting in.
-- merit_flag_schools: note the student's SAT exceeds the school's 75th percentile;
-  use "may qualify" only, never promise aid.
-- reach_flag_schools: supportive framing — admission would rest on non-test strengths,
-  first year may be more demanding, early support helps. Never discourage.
+- above_p75_schools: state only that the student's SAT is above the 75th percentile of the
+  school's published range. Say nothing about aid, scholarships or admission chances.
+- below_p25_schools: state only that the student's SAT is below the 25th percentile of the
+  school's published range. Say nothing about admission chances.
 - If student.sat_score is null, omit fit scores and say once that no SAT was provided.
 - net_price_bracket is the student's net price for their household income bracket
   (student.income_bracket_label). It is the ONLY figure you may call "net price".
@@ -255,7 +270,7 @@ BRANCHES:
 MISSING FIGURES: each school has figures.net_price, figures.program_earnings and
 figures.typical_debt, each with a "display" string that is either the value or the reason it is
 missing. Use those display strings as given. Never compute or describe a range, lowest/highest
-or spread of net price, program earnings or typical debt across schools. Never describe a
+or spread of net price, program earnings or school-wide debt across schools. Never describe a
 missing figure as $0. Never say why a value is missing except with the reason strings
 supplied in figures. figure_completeness gives how many schools have each figure; use it as
 given.
@@ -288,19 +303,20 @@ WRITE ONLY THESE (lengths are ceilings):
   LEHD data" (not "program earnings" and not a bare vintage year). Use net_price_bracket,
   called "Net price", as the cost figure (never sticker_price); if it is null, say net price is
   not published. ≤40 words each.
-- critical_finding: name any merit-flag school, any reach-flag school, and any school whose
-  fit is "Not applicable". Nothing else. ≤110 words.
+- score_position_note: name any above_p75 school ("above the 75th percentile"), any below_p25
+  school ("below the 25th percentile"), and any school whose fit is "Not applicable". Nothing
+  else. Never use the words merit, critical, ROI, lifetime, "may qualify" or "3 in 4". ≤110 words.
 - net_price_note: state the bracket label if present. ≤90 words.
 - fit_sentences: one per school — bands if present, disclosure copy, merit/reach framing, and
   the Admission Fit Estimate disclaimer (see BRANCHES). ≤70 words each.
 - earnings_paragraph: program_earnings per school with its method label (e.g. Census-reported)
   (or its figures.program_earnings.display when missing). Do NOT state the earnings vintage year here — the figure and its
   method flag only. No "best". ≤90 words.
-- debt_burden_paragraph: state each school's avg_debt (typical debt at completion) and its
+- debt_burden_paragraph: state each school's avg_debt (school-wide ${DEBT_LABEL}) and its
   debt_income_ratio (use figures.typical_debt.display for the debt). debt_income_ratio is supplied as data and is already
-  calculated: the school's typical debt (avg_debt) divided by the school's
-  median earnings ${DEBT_RATIO_BASIS.label} (debt_income_basis_label; College Scorecard,
-  students who received federal aid; the earnings figure is debt_income_earnings). It
+  calculated: the school-wide ${DEBT_LABEL} (avg_debt) divided by the school's
+  median earnings ${DEBT_RATIO_BASIS.label} (debt_income_basis_label; College Scorecard; the
+  earnings figure is debt_income_earnings). State once that: ${DEBT_VS_EARNINGS_NOTE} It
   describes the whole school, not the specific program. Write debt_income_ratio_display exactly, in the form
   "<debt_income_ratio_display> : 1" (display "0.35" is written "0.35 : 1"), and describe it only
   with that basis. Use the payload ratio as given: never recompute it, never derive it from
@@ -338,7 +354,7 @@ export const GEMINI_RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
     two_minute_lines: { type: "ARRAY", items: schoolLine },
-    critical_finding: { type: "STRING" },
+    score_position_note: { type: "STRING" },
     executive_summary: { type: "STRING" },
     analyst_note: { type: "STRING" },
     net_price_note: { type: "STRING" },
@@ -348,7 +364,7 @@ export const GEMINI_RESPONSE_SCHEMA = {
     plain_english_question: { type: "STRING" },
   },
   required: [
-    "two_minute_lines", "critical_finding", "executive_summary", "analyst_note",
+    "two_minute_lines", "score_position_note", "executive_summary", "analyst_note",
     "net_price_note", "fit_sentences", "earnings_paragraph", "debt_burden_paragraph",
     "plain_english_question",
   ],
@@ -365,7 +381,7 @@ export const GEMINI_RESPONSE_SCHEMA = {
 function money(v: number | null): string {
   return v != null
     ? `$${v.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-    : "not published";
+    : "Not published";
 }
 
 // The two-minute read's cost clause: the student's income-bracket net price
@@ -386,7 +402,7 @@ export function costOfAttendanceNote(payload: C1LitePayload): string {
     const sc =
       t.scorecard_avg_coa != null
         ? `$${t.scorecard_avg_coa.toLocaleString("en-US")}${t.scorecard_avg_coa_year ? ` (${t.scorecard_avg_coa_year})` : ""}`
-        : "not published";
+        : "Not published";
     return `${c.name}: sticker price for in-state tuition living on campus ${scenarioDisplay(t.sticker_in_state_on_campus)}; sticker price for out-of-state tuition living off campus ${scenarioDisplay(t.sticker_out_state_off_campus)}; College Scorecard average cost of attendance ${sc}.`;
   });
   return parts.length ? ` ${parts.join(" ")}` : "";
@@ -411,31 +427,37 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
   }));
 
   const findingParts: string[] = [];
-  if (derived_flags.merit_flag_schools.length) {
-    findingParts.push(`Student's SAT exceeds the 75th percentile at ${derived_flags.merit_flag_schools.join(", ")} — may qualify for merit consideration.`);
+  if (derived_flags.above_p75_schools.length) {
+    findingParts.push(`Student's SAT is above the 75th percentile at ${derived_flags.above_p75_schools.join(", ")}.`);
   }
-  if (derived_flags.reach_flag_schools.length) {
-    findingParts.push(`Student's SAT is below the 25th percentile at ${derived_flags.reach_flag_schools.join(", ")}.`);
+  if (derived_flags.below_p25_schools.length) {
+    findingParts.push(`Student's SAT is below the 25th percentile at ${derived_flags.below_p25_schools.join(", ")}.`);
   }
   const naSchools = schools.filter((s) => s.fit_label === "Not applicable");
-  const naSubmitted = naSchools.filter((s) => isSubmittedOnlyCategory(s.sat_data_category)).map((s) => s.display_name);
+  const naSubmitted = naSchools.filter((s) => isSubmittedOnlyCategory(s.sat_data_category));
   const notApplicable = naSchools.filter((s) => !isSubmittedOnlyCategory(s.sat_data_category)).map((s) => s.display_name);
   if (notApplicable.length) {
     findingParts.push(`Fit is not applicable at ${notApplicable.join(", ")}.`);
   }
-  if (naSubmitted.length) {
-    findingParts.push(`${FIT_NA_SUBMITTED_REASON} (${naSubmitted.join(", ")}).`);
+  // Same badge wording as the SAT positioning page (admission_disclosure_categories.badge_label).
+  for (const label of [...new Set(naSubmitted.map((s) => s.disclosure.badge_label))]) {
+    const names = naSubmitted.filter((s) => s.disclosure.badge_label === label).map((s) => s.display_name);
+    findingParts.push(`${label}: ${FIT_NA_SUBMITTED_REASON} (${names.join(", ")}).`);
   }
-  const critical_finding = findingParts.length
+  const score_position_note = findingParts.length
     ? findingParts.join(" ")
-    : "No merit, reach, or fit-unavailable flags apply to the selected schools; see the cost and earnings tables for figures.";
+    : "No score-position or fit-unavailable flags apply to the selected schools; see the cost and earnings tables for figures.";
 
-  const executive_summary = `This report compares ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} on published net price, admissions, program earnings, and typical debt — it does not rank or recommend a school. ${
+  const executive_summary = `This report compares ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} on published net price, admissions, program earnings, and school-wide median federal debt of completers — it does not rank or recommend a school. ${
     student.sat_score == null ? "No SAT score was provided, so academic fit is not shown." : "Academic fit is shown where the disclosure category allows it."
   }`;
 
   const gradSummary = gradRateSummaryFor(payload);
-  const analyst_note_base = `This report evaluates ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures. Most figures come directly from public federal datasets. Where Census PSEO program earnings data is unavailable, clearly labelled estimates may be generated using real reported earnings and program-level trends, rather than the raw dataset alone. Estimates are never chained from other estimates and are not presented as official Census-published figures. Where a figure is not published and no valid real-data anchor exists, it is shown as "Not Published" rather than substituted with an estimate or typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
+  const estimatesUsed = schools.some((s) => s.earnings_estimated === true);
+  const estimateSentences = estimatesUsed
+    ? ` Where Census PSEO program earnings data is unavailable, a clearly labelled estimate derived only from real reported earnings is shown; estimates are never chained from other estimates and are not official Census-published figures.`
+    : "";
+  const analyst_note_base = `This report evaluates ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} using federally sourced figures. Most figures come directly from public federal datasets.${estimateSentences} Where a figure is not published it is shown as "Not published" rather than substituted with an estimate or typical value. This report does not rank schools or recommend one over another — the following pages lay out cost, admissions, earnings, and debt so your family can weigh the trade-offs directly. Confirm all figures with each institution before making a decision.`;
   // AnalystNote splits on blank lines, so the graduation sentence is its own paragraph.
   const analyst_note = gradSummary ? `${analyst_note_base}\n\n${gradSummary}` : analyst_note_base;
 
@@ -451,7 +473,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
       return {
         school: s.display_name,
         sentence: isSubmittedOnlyCategory(s.sat_data_category)
-          ? `${FIT_NA_SUBMITTED_REASON}. ${s.disclosure.supporting_copy}`
+          ? `${s.disclosure.badge_label}: ${FIT_NA_SUBMITTED_REASON}. ${s.disclosure.supporting_copy}`
           : `Academic Fit: Not applicable. ${s.disclosure.supporting_copy}`,
       };
     }
@@ -464,7 +486,7 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     if (s.sat_25 == null || s.sat_75 == null || studentSat == null) {
       return {
         school: s.display_name,
-        sentence: `${s.display_name}: SAT band ${s.sat_25 != null && s.sat_75 != null ? `${s.sat_25}–${s.sat_75}` : "not published"}. ${s.disclosure.supporting_copy}`,
+        sentence: `${s.display_name}: SAT band ${s.sat_25 != null && s.sat_75 != null ? `${s.sat_25}–${s.sat_75}` : "Not published"}. ${s.disclosure.supporting_copy}`,
       };
     }
     const relation =
@@ -484,18 +506,18 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
     })
     .join(" ");
 
-  // debt_income_ratio is the payload value (typical debt ÷ school median
+  // debt_income_ratio is the payload value (median debt of completers ÷ school median
   // earnings at DEBT_RATIO_BASIS) — the same value the Section 04 table shows.
   // Never recomputed here.
   const debt_burden_paragraph = schools
-    .map((s) => `${s.display_name}: typical debt ${schoolFigures(s).typical_debt.display}, debt-to-income ratio ${formatDebtIncomeRatio(s.debt_income_ratio)}${s.debt_income_ratio != null ? ` (typical debt ÷ school median earnings ${s.debt_income_basis_label ?? DEBT_RATIO_BASIS.label})` : ""}.`)
-    .join(" ") + " The ratio describes the whole school, not the program shown, and is not comparable to the program-level Median Earnings (Yr 10).";
+    .map((s) => `${s.display_name}: school-wide ${DEBT_LABEL} ${schoolFigures(s).typical_debt.display}, debt-to-income ratio ${formatDebtIncomeRatio(s.debt_income_ratio)}${s.debt_income_ratio != null ? ` (school-wide ${DEBT_LABEL} ÷ school median earnings ${s.debt_income_basis_label ?? DEBT_RATIO_BASIS.label})` : ""}.`)
+    .join(" ") + ` ${DEBT_VS_EARNINGS_NOTE} The ratio describes the whole school, not the program shown, and is not comparable to the program-level Median Earnings (Yr 10).`;
 
-  const plain_english_question = `With net price, admissions fit, program earnings, and School level typical debt on the table for ${schools.map((s) => s.display_name).join(", ")}, the question for your family is which cost-and-value structure you can carry — not which school ranks highest.`;
+  const plain_english_question = `With net price, admissions fit, program earnings, and school-wide median federal debt of completers on the table for ${schools.map((s) => s.display_name).join(", ")}, the question for your family is which cost-and-value structure you can carry — not which school ranks highest.`;
 
   return {
     two_minute_lines,
-    critical_finding,
+    score_position_note,
     executive_summary,
     analyst_note,
     net_price_note,
@@ -555,6 +577,24 @@ export function gateNumbersTraceable(n: C1LiteNarrative, payload: C1LitePayload)
     (num) => !hay.includes(num) && !hay.includes(num.replace(/,/g, "")),
   );
 }
+// Phrases that must never reach the report. Checked as whole words/phrases,
+// case-insensitively, against the narrative's text (not its JSON keys) and —
+// via findBannedPhrases in pdf.service — against the rendered pages.
+export const BANNED_PHRASES: ReadonlyArray<{ phrase: string; re: RegExp }> = [
+  { phrase: "merit", re: /\bmerit\b/i },
+  { phrase: "ROI", re: /\bROI\b/i },
+  { phrase: "20-year", re: /\b20[- ]year\b/i },
+  { phrase: "CRITICAL", re: /\bcritical\b/i },
+  { phrase: "may qualify", re: /\bmay qualify\b/i },
+  { phrase: "3 in 4", re: /\b3 in 4\b/i },
+  { phrase: "lifetime", re: /\blifetime\b/i },
+];
+export function findBannedPhrases(text: string): string[] {
+  return BANNED_PHRASES.filter((b) => b.re.test(text)).map((b) => b.phrase);
+}
+export function gateBannedPhrases(n: C1LiteNarrative): string[] {
+  return findBannedPhrases(narrativeText(n));
+}
 export function gateBannedVocab(n: C1LiteNarrative): string[] {
   const blob = JSON.stringify(n).toLowerCase();
   return BANNED.filter((w) => blob.includes(w));
@@ -566,9 +606,9 @@ export function gateNeutrality(n: C1LiteNarrative): string[] {
 export function gateBranchConsistency(n: C1LiteNarrative, payload: C1LitePayload): string[] {
   const errs: string[] = [];
   const blob = JSON.stringify(n).toLowerCase();
-  const meritLang = blob.includes("75th") || blob.includes("may qualify");
-  if (payload.derived_flags.merit_flag_schools.length === 0 && meritLang)
-    errs.push("Merit language present but merit_flag_schools is empty.");
+  const mentions75 = blob.includes("75th");
+  if (payload.derived_flags.above_p75_schools.length === 0 && mentions75)
+    errs.push("75th-percentile language present but above_p75_schools is empty.");
   return errs;
 }
 function narrativeText(n: C1LiteNarrative): string {
@@ -616,12 +656,24 @@ export function gateFitUnavailable(n: C1LiteNarrative, payload: C1LitePayload): 
   return errs;
 }
 
+/**
+ * A school whose SAT/admission category is D_REVIEW_PENDING ("Verifying Testing
+ * Requirements") carries an unverified open-admission tag; no report may show it.
+ */
+export function gateUnverifiedAdmissionTag(payload: C1LitePayload): string[] {
+  return payload.schools
+    .filter((s) => s.sat_data_category === "D_REVIEW_PENDING")
+    .map((s) => `${s.display_name} carries an unverified open-admission tag (D_REVIEW_PENDING).`);
+}
+
 export function runGates(n: C1LiteNarrative, payload: C1LitePayload): string[] {
   return [
     ...gateGraduationRate(n, payload),
     ...gateFitUnavailable(n, payload),
+    ...gateUnverifiedAdmissionTag(payload),
     ...gateNumbersTraceable(n, payload).map((x) => `Orphan number: ${x}`),
     ...gateBannedVocab(n).map((x) => `Banned word: ${x}`),
+    ...gateBannedPhrases(n).map((x) => `Banned phrase: ${x}`),
     ...gateNeutrality(n),
     ...gateBranchConsistency(n, payload),
     ...gateSatNarrative(n, payload),

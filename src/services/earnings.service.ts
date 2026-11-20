@@ -138,3 +138,62 @@ export async function getEarningsForProgram(
     avg_salary: resolveAvgSalary(sorted),
   };
 }
+
+export interface EarningsPath {
+  /** The ONE cohort every year_1 / year_5 / year_10 below comes from ('0000' = no real class year). */
+  cohort: string | null;
+  year_1: EarningsMetricResolved | null;
+  year_5: EarningsMetricResolved | null;
+  year_10: EarningsMetricResolved | null;
+  /** Newest cohort's year_1 — a separate line, never mixed into the path above. */
+  latest_year_1: EarningsMetricResolved | null;
+}
+
+/**
+ * Pure: pick the most recent cohort with a usable year_10 and read year_1,
+ * year_5 and year_10 from THAT row only (a skipped or missing value stays
+ * null rather than borrowing another cohort's). The newest usable year_1 is
+ * returned separately. Rows are sorted newest-first here.
+ */
+export function resolveEarningsPath(rows: EarningsCohortRow[]): EarningsPath {
+  const sorted = sortCohortsDescending(rows);
+  const metric = (
+    row: EarningsCohortRow,
+    valueKey: "year_1" | "year_5" | "year_10",
+    methodKey: "year_1_method" | "year_5_method" | "year_10_method",
+  ): EarningsMetricResolved | null => {
+    const method = normalizeEarningsFillMethod(row[methodKey]);
+    if (SKIPPED_METHODS.includes(method)) return null;
+    const value = safeNum(row[valueKey]);
+    return value == null ? null : { value, method, cohort: row.grad_cohort };
+  };
+  const latest_year_1 = resolveMetric(sorted, "year_1", "year_1_method");
+  const pathRow = sorted.find((r) => metric(r, "year_10", "year_10_method") != null);
+  if (!pathRow) {
+    return { cohort: null, year_1: null, year_5: null, year_10: null, latest_year_1 };
+  }
+  return {
+    cohort: pathRow.grad_cohort,
+    year_1: metric(pathRow, "year_1", "year_1_method"),
+    year_5: metric(pathRow, "year_5", "year_5_method"),
+    year_10: metric(pathRow, "year_10", "year_10_method"),
+    latest_year_1,
+  };
+}
+
+export async function getEarningsPathForProgram(
+  unitid: number,
+  cipCode: string,
+  credentialLevel: number,
+): Promise<EarningsPath> {
+  const { rows } = await pool.query<EarningsCohortRow>(
+    `SELECT grad_cohort, year_1, year_5, year_10,
+            year_1_method, year_5_method, year_10_method, avg_salary
+       FROM earnings_against_courses_merged
+      WHERE unitid = $1
+        AND replace(cip_code, '.', '') = replace($2, '.', '')
+        AND credential_level = $3`,
+    [unitid, cipCode, credentialLevel],
+  );
+  return resolveEarningsPath(rows);
+}

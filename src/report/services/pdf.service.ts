@@ -9,7 +9,7 @@ import Cover from "../components/Cover";
 import { buildCoverModel, validateCoverText } from "../components/coverData";
 import { renderSatSectionHtml } from "../components/SatPositioning";
 import { gateSatRenderedNumbers } from "./satPositioningGates";
-import type { C1LitePayload, C1LiteNarrative } from "./reportPrompt";
+import { findBannedPhrases, type C1LitePayload, type C1LiteNarrative } from "./reportPrompt";
 
 /**
  * The cover logo is embedded as a base64 data URI rather than referenced by
@@ -171,6 +171,17 @@ export async function generateReportPdf(
     logoDataUri: getLogoDataUri(),
   });
   const bodyHtml = ReactDOMServer.renderToStaticMarkup(element);
+
+  // Banned-phrase validator over everything that will be printed (not only the
+  // narrative): merit, ROI, 20-year, CRITICAL, may qualify, 3 in 4, lifetime.
+  const printedText = bodyHtml
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#x27;/g, "'");
+  const banned = findBannedPhrases(printedText);
+  if (banned.length) {
+    throw new Error(`Banned phrase(s) in rendered report: ${banned.join(", ")}`);
+  }
 
   // Cover gate: headline word == card count, no placeholders, website once.
   const coverText = ReactDOMServer.renderToStaticMarkup(

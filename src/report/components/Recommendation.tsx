@@ -3,6 +3,7 @@ import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 import { QuestionsTable } from "./QuestionsTable";
+import { takesNoFederalAid } from "../utils/missingValue";
 
 export interface RecommendationProps {
   payload: C1LitePayload;
@@ -141,6 +142,7 @@ export function RecommendationFit({
 }
 
 export function RecommendationQuestion({
+  payload,
   narrative,
   reportId,
   generatedDate,
@@ -191,6 +193,14 @@ export function RecommendationQuestion({
         </div>
 
         <QuestionsTable />
+        {(() => {
+          const noAid = [...new Set(payload.schools.filter((s) => takesNoFederalAid(s)).map((s) => s.name))];
+          return noAid.length ? (
+            <p style={{ fontSize: "10px", lineHeight: "1.5", color: theme.color.inkMuted, margin: "8px 0 0 0" }}>
+              Questions 1 and 2 (federal loans and Parent PLUS) do not apply to {noAid.join(", ")}, which takes no federal student aid.
+            </p>
+          ) : null;
+        })()}
       </div>
 
       <PageFooter

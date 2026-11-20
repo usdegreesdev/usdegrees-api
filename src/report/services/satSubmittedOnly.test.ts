@@ -58,7 +58,7 @@ test("label mapping: below / within / above for submitted-only categories", () =
     assert.ok(t.includes("Below the range of students who submitted scores"));
     assert.ok(t.includes("Within the range of students who submitted scores"));
     assert.ok(t.includes("Above the range of students who submitted scores"));
-    assert.ok(t.includes("Higher than about 3 in 4 students who submitted scores"));
+    assert.ok(t.includes("Above the 75th percentile of students who submitted scores"));
     assert.ok(t.includes("Most students who submitted scores scored higher"));
     assert.ok(t.includes("% of the way through the middle 50%"));
     assert.ok(!t.includes("enrolled students who reported"));
@@ -139,21 +139,21 @@ test("summary chips: submitted wording only on pages with a submitted-only schoo
   assert.ok(!other.includes("submitted range"));
 });
 
-test("merit/reach flags exclude H and C schools only", () => {
+test("score-position flags exclude H and C schools only", () => {
   const sch = (name: string, category: string, p25: number, p75: number): any => ({
     display_name: name, sat_data_category: category, sat_25: p25, sat_75: p75,
     net_price_bracket: null, program_earnings: null, avg_debt: null,
   });
   const f = computeDerivedFlags(1300, [
-    sch("HHigh", "H_TEST_CONSIDERED", 1000, 1200), // would be merit
-    sch("HLow", "H_TEST_CONSIDERED", 1400, 1500),  // would be reach
+    sch("HHigh", "H_TEST_CONSIDERED", 1000, 1200), // would be above p75
+    sch("HLow", "H_TEST_CONSIDERED", 1400, 1500),  // would be below p25
     sch("COpt", "C_TEST_OPTIONAL", 1000, 1200),
     sch("COptLow", "C_TEST_OPTIONAL", 1400, 1500),
-    sch("Used", "B_NOT_USED", 1000, 1200),         // merit
-    sch("Used2", "B_NOT_USED", 1400, 1500),        // reach
-  ], {});
-  assert.deepEqual(f.merit_flag_schools, ["Used"]);
-  assert.deepEqual(f.reach_flag_schools, ["Used2"]);
+    sch("Used", "B_NOT_USED", 1000, 1200),         // above p75
+    sch("Used2", "B_NOT_USED", 1400, 1500),        // below p25
+  ]);
+  assert.deepEqual(f.above_p75_schools, ["Used"]);
+  assert.deepEqual(f.below_p25_schools, ["Used2"]);
 });
 
 test("other categories are unchanged (old labels, fit heading, fit sort)", () => {
@@ -181,17 +181,17 @@ test("category recognition and page-4 reason", () => {
   const mk = (name: string, category: string): any => ({
     display_name: name, name, unitid: "1", fit_label: "Not applicable", fit_score: null,
     sat_data_category: category, sat_25: 1141, sat_75: 1388,
-    disclosure: { supporting_copy: "SC" }, program_earnings: null,
+    disclosure: { supporting_copy: "SC", badge_label: "Scores Considered If Submitted" }, program_earnings: null,
     net_price_bracket: null, net_price_vintage: null,
   });
   const payload: any = {
     schools: [mk("Grove", "H_TEST_CONSIDERED"), mk("Open U", "A_OPEN_ADMISSION")],
-    derived_flags: { merit_flag_schools: [], reach_flag_schools: [] },
+    derived_flags: { above_p75_schools: [], below_p25_schools: [] },
     student: { display_name: "S", sat_score: 1300, income_bracket_label: null },
   };
   const n2 = buildFallbackNarrative(payload);
-  assert.ok(n2.critical_finding.includes(`${FIT_NA_SUBMITTED_REASON} (Grove).`));
-  assert.ok(n2.critical_finding.includes("Fit is not applicable at Open U."));
-  assert.ok(n2.fit_sentences[0].sentence.startsWith(FIT_NA_SUBMITTED_REASON));
+  assert.ok(n2.score_position_note.includes(`Scores Considered If Submitted: ${FIT_NA_SUBMITTED_REASON} (Grove).`));
+  assert.ok(n2.score_position_note.includes("Fit is not applicable at Open U."));
+  assert.ok(n2.fit_sentences[0].sentence.startsWith(`Scores Considered If Submitted: ${FIT_NA_SUBMITTED_REASON}`));
   assert.ok(n2.fit_sentences[1].sentence.startsWith("Academic Fit: Not applicable."));
 });

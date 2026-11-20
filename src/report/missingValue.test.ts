@@ -8,7 +8,7 @@ import {
   MISSING_REASONS,
   resolveFigure,
   schoolFigures,
-  TYPICAL_DEBT_FOOTNOTE,
+  typicalDebtFootnote,
   NO_AID_BOX_TEXT,
 } from "./utils/missingValue";
 import ExecutiveSummary from "./components/ExecutiveSummary";
@@ -40,11 +40,11 @@ const PAYLOAD: any = {
   report_meta: { generated_date: "November 17, 2026" },
   student: { display_name: "S", income_bracket_label: "$48k–$75k", sat_score: null },
   schools: SCHOOLS,
-  derived_flags: { merit_flag_schools: [], reach_flag_schools: [], best_roi_school: "" },
+  derived_flags: { above_p75_schools: [], below_p25_schools: [] },
   federal_aid_fetched_on: "2026-11-16", college_details: [],
 };
 const NARR: any = {
-  executive_summary: "x", critical_finding: "SAT sentence stays.", two_minute_lines: [],
+  executive_summary: "x", score_position_note: "SAT sentence stays.", two_minute_lines: [],
   net_price_note: "n", earnings_paragraph: "e", debt_burden_paragraph: "d",
 };
 const props = { payload: PAYLOAD, narrative: NARR, reportId: "T", generatedDate: "t", pageNumber: 1, totalPages: 1 };
@@ -56,11 +56,11 @@ test("reason logic: value, zero, null, no_federal_aid, unknown", () => {
     assert.equal(resolveFigure("typical_debt", missing as any, "participates").reason, MISSING_REASONS.notPublishedScorecard);
     assert.equal(resolveFigure("typical_debt", missing as any, "no_federal_aid").reason, "takes no federal student aid");
     assert.equal(resolveFigure("net_price", missing as any, "no_federal_aid").reason, "takes no federal student aid");
-    assert.equal(resolveFigure("net_price", missing as any, null).reason, "not published by College Scorecard");
-    assert.equal(resolveFigure("net_price", missing as any, "unknown" as any).reason, "not published by College Scorecard");
+    assert.equal(resolveFigure("net_price", missing as any, null).reason, "Not published");
+    assert.equal(resolveFigure("net_price", missing as any, "unknown" as any).reason, "Not published");
     // program earnings never depend on aid status
-    assert.equal(resolveFigure("program_earnings", missing as any, "no_federal_aid").reason, "not published");
-    assert.equal(resolveFigure("program_earnings", missing as any, null).reason, "not published");
+    assert.equal(resolveFigure("program_earnings", missing as any, "no_federal_aid").reason, "Not published");
+    assert.equal(resolveFigure("program_earnings", missing as any, null).reason, "Not published");
   }
   assert.equal(resolveFigure("typical_debt", 0, "participates").value, null); // 0 is never a value
   assert.equal(resolveFigure("net_price", 9813, "no_federal_aid").value, 9813); // value wins over status
@@ -69,7 +69,7 @@ test("reason logic: value, zero, null, no_federal_aid, unknown", () => {
 test("completeness counts", () => {
   const c = figureCompleteness(SCHOOLS);
   assert.deepEqual([c.total, c.net_price, c.program_earnings, c.typical_debt], [3, 2, 1, 2]);
-  assert.ok(c.line.includes("net price 2 of 3, program earnings 1 of 3, typical debt 2 of 3"));
+  assert.ok(c.line.includes("net price 2 of 3, program earnings 1 of 3, school-wide debt 2 of 3"));
 });
 
 test("executive summary rows: order preserved, reasons per school, no range", () => {
@@ -77,7 +77,7 @@ test("executive summary rows: order preserved, reasons per school, no range", ()
   assert.equal(rows, "Eastern Illinois University $9,813 · Grove City College takes no federal student aid · Illinois Eastern Community Colleges $5,965");
   assert.equal(
     figureRowText(SCHOOLS, "program_earnings"),
-    "Eastern Illinois University $87,447 (10 years after graduation; 2016 cohort); first year $52,000 (2022 cohort) · Grove City College not published · Illinois Eastern Community Colleges not published",
+    "Eastern Illinois University $87,447 (year 10 after graduation; 2016 cohort); same cohort: year 1 $52,000 · Grove City College Not published · Illinois Eastern Community Colleges Not published",
   );
   assert.equal(
     figureRowText(SCHOOLS, "typical_debt"),
@@ -95,7 +95,7 @@ test("pages 4, 5, 6 render with reasons and no range text", () => {
   const p6 = strip(render(CareerOutcomes));
   console.log("\n--- PAGE 4 ---\n" + p4 + "\n--- PAGE 5 ---\n" + p5 + "\n--- PAGE 6 ---\n" + p6);
   assert.ok(p4.includes("Net price Eastern Illinois University $9,813 · Grove City College takes no federal student aid · Illinois Eastern Community Colleges $5,965"));
-  assert.ok(p4.includes("Figures published: net price 2 of 3, program earnings 1 of 3, typical debt 2 of 3."));
+  assert.ok(p4.includes("Figures published: net price 2 of 3, program earnings 1 of 3, school-wide debt 2 of 3."));
   assert.ok(p4.includes("SAT sentence stays."));
   for (const t of [p4, p5, p6]) {
     assert.ok(!RANGE_WORDS.test(t));
@@ -105,13 +105,14 @@ test("pages 4, 5, 6 render with reasons and no range text", () => {
   assert.ok(p6.includes(NO_AID_BOX_TEXT));
   assert.equal(p6.split(NO_AID_BOX_TEXT).length - 1, 1); // one box, Grove City only
   assert.ok(p6.includes("Not published")); // Illinois Eastern program earnings
-  assert.ok(p6.includes(TYPICAL_DEBT_FOOTNOTE));
+  assert.ok(p6.includes(typicalDebtFootnote(["Grove City College"])));
+  assert.ok(p6.includes("do not apply to Grove City College"));
 });
 
 test("footnote text exact", () => {
   assert.equal(
-    TYPICAL_DEBT_FOOTNOTE,
-    "Typical debt is shown only where College Scorecard publishes it. A school that takes no federal student aid has no federal-loan debt figure; that is not the same as zero debt. Net price is shown as 'Not published' where Scorecard has no figure.",
+    typicalDebtFootnote(["Grove City College"]),
+    "School-wide median federal debt of completers is shown only where College Scorecard publishes it. A school that takes no federal student aid has no federal-loan debt figure; that is not the same as zero debt. Federal-loan debt and net price do not apply to Grove City College, which takes no federal student aid. Net price is shown as 'Not published' where Scorecard has no figure. This report shows school-wide debt. Program-level debt is not included.",
   );
 });
 
@@ -131,14 +132,14 @@ test("prompt and fallback contain no range wording", () => {
   const n = buildFallbackNarrative(PAYLOAD);
   const all = JSON.stringify(n);
   assert.ok(!/ranges? from|Range across|ranges from/i.test(all));
-  assert.ok(n.debt_burden_paragraph.includes("Grove City College: typical debt takes no federal student aid"));
-  assert.ok(n.earnings_paragraph.includes("Grove City College: not published"));
+  assert.ok(n.debt_burden_paragraph.includes("Grove City College: school-wide median federal debt of completers takes no federal student aid"));
+  assert.ok(n.earnings_paragraph.includes("Grove City College: Not published"));
   assert.ok(!all.includes("$0"));
 });
 
 test("derived flags no longer carry ranges", () => {
-  const f: any = computeDerivedFlags(null, SCHOOLS, {});
-  assert.deepEqual(Object.keys(f).sort(), ["best_roi_school", "merit_flag_schools", "reach_flag_schools"]);
+  const f: any = computeDerivedFlags(null, SCHOOLS);
+  assert.deepEqual(Object.keys(f).sort(), ["above_p75_schools", "below_p25_schools"]);
 });
 
 test("page 4: no Decision Context, first year in the earnings box, values bold, no bottom disclaimer", () => {
@@ -146,11 +147,11 @@ test("page 4: no Decision Context, first year in the earnings box, values bold, 
   const p4 = strip(html);
   assert.ok(!p4.includes("Decision Context"));
   assert.ok(!p4.includes("For context"));
-  assert.ok(p4.includes("$87,447 (10 years after graduation; 2016 cohort); first year $52,000 (2022 cohort)"));
+  assert.ok(/\$87,447\s*\(year 10 after graduation; 2016 cohort\)\s*; same cohort: year 1\s*\$52,000/.test(p4));
   for (const v of ["$9,813", "$5,965", "$87,447", "$52,000", "$15,722", "$5,500"]) {
     assert.ok(html.includes(`<strong>${v}</strong>`), v);
   }
   assert.ok(!html.includes("<strong>takes no federal"));
   const t = figureRowText([{ ...SCHOOLS[0], earnings_vintage: null, earnings_year_1: null }], "program_earnings");
-  assert.equal(t, "Eastern Illinois University $87,447 (10 years after graduation); first year not published");
+  assert.equal(t, "Eastern Illinois University $87,447 (year 10 after graduation; cohort year not recorded)");
 });

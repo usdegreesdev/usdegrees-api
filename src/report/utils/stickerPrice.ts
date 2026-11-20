@@ -53,5 +53,5 @@ export const STICKER_METHODOLOGY =
 export function scenarioDisplay(s: StickerScenario): string {
   return s.published
     ? `$${s.total.toLocaleString("en-US")}`
-    : `not published (missing: ${s.missing.join(", ")})`;
+    : `Not published (missing: ${s.missing.join(", ")})`;
 }

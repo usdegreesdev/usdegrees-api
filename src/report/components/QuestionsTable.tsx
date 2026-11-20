@@ -20,7 +20,7 @@ export const DECISION_QUESTIONS: QuestionRow[] = [
   },
   {
     question:
-      "Given the new $20,000-per-year and $65,000-lifetime Parent PLUS caps, what does the school expect families in our income bracket to do about the difference?",
+      "Given the new Parent PLUS caps of $20,000 per year and $65,000 per student (effective July 1, 2026), what does the school expect families in our income bracket to do about the difference?",
     why: "This makes the school acknowledge its funding gap, and state its plan — bridge grants, payment plans, or “private loans.” Even that last answer tells you something important.",
   },
   {
@@ -35,8 +35,8 @@ export const DECISION_QUESTIONS: QuestionRow[] = [
   },
   {
     question:
-      "Is the student being considered for merit aid — and exactly what GPA or credit load keeps it for all four years?",
-    why: "Merit aid that disappears after Year 1 is a discount on the brochure, not on the degree. Get the renewal conditions in writing.",
+      "Is the student being considered for institutional scholarships — and exactly what GPA or credit load keeps them for all four years?",
+    why: "Scholarship aid that disappears after Year 1 is a discount on the brochure, not on the degree. Get the renewal conditions in writing.",
   },
   {
     question:

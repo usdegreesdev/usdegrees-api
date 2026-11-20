@@ -3,23 +3,25 @@
  * format and all of the explanatory wording live.
  *
  * WHAT IT IS
- *   typical debt ÷ the school's median earnings, shown as "X.XX : 1" (debt per
- *   $1 of earnings, two decimals). It describes the WHOLE SCHOOL (all programs
- *   and degree levels), not the program shown, and it is based on past
- *   students who received federal aid. It is not a prediction, and this report
+ *   school-wide median federal debt of completers ÷ the school's median
+ *   earnings, shown as "X.XX : 1" (debt per $1 of earnings, two decimals). It
+ *   describes the WHOLE SCHOOL (all programs and degree levels), not the
+ *   program shown. Debt covers students who completed; the earnings cover all
+ *   entrants who received federal aid. It is not a prediction, and this report
  *   never says a ratio is good or bad.
  *
  * WHERE EACH INPUT COMES FROM
- *   - Typical debt: public.debt_income_ratio.avg_debt for the school's unitid
- *     (the same value printed in the "Typical Debt" column).
+ *   - Debt: public.earnings.median_debt_completers (College Scorecard field
+ *     aid.median_debt.completers.overall, data year 2024 per
+ *     scorecard_data_vintage). debt_income_ratio.avg_debt (undocumented April
+ *     load, no source field) and the stored debt_income_ratio are NOT read.
  *   - School median earnings: public.earnings.<DEBT_RATIO_BASIS.column> for the
  *     same unitid (College Scorecard, field DEBT_RATIO_BASIS.apiField),
  *     refreshed on public.earnings.scorecard_api_fetched_on.
- *   - The table's precomputed ratio columns are not used, and nothing comes
- *     from the program-level Median Earnings (Yr 10) column.
+ *   - Nothing comes from the program-level Median Earnings (Yr 10) column.
  *
  * WHEN THERE IS NO RATIO (null → "cannot be calculated due to missing values")
- *   - typical debt is null or 0 (0 can mean no federal loans, not zero debt),
+ *   - median debt of completers is null or 0 (0 can mean no federal loans, not zero debt),
  *   - earnings are null or 0 / not published,
  *   - or the rounded result would print as 0.00.
  *
@@ -42,6 +44,13 @@ export const DEBT_RATIO_BASIS = {
   methodologyLabel: "6 years after students first enrolled",
 };
 
+/** What the debt figure is, printed wherever it appears. */
+export const DEBT_LABEL = "median federal debt of completers";
+export const DEBT_LABEL_SCHOOL_WIDE = "School-wide median federal debt of completers";
+/** Debt and Year-6 earnings cover different groups; always said next to the ratio. */
+export const DEBT_VS_EARNINGS_NOTE =
+  "Debt is for students who completed; Year-6 earnings cover all entrants who received federal aid.";
+
 export const MISSING_RATIO_TEXT = "cannot be calculated due to missing values";
 
 /** Column header for the school-level earnings the ratio is divided by. */
@@ -55,10 +64,10 @@ export function schoolEarningsColumnLabel(): string {
  */
 export function debtRatioDisclaimer(): string {
   return [
-    `Debt-to-income ratio = typical debt ÷ school-wide median earnings ${DEBT_RATIO_BASIS.label} (College Scorecard, students who received federal aid). A ratio of 0.35 : 1 means typical debt is about 35% of one year of those earnings. Those earnings are shown in the ${schoolEarningsColumnLabel()} column.`,
+    `Debt-to-income ratio = school-wide ${DEBT_LABEL} ÷ school-wide median earnings ${DEBT_RATIO_BASIS.label} (College Scorecard). ${DEBT_VS_EARNINGS_NOTE} A ratio of 0.35 : 1 means debt is about 35% of one year of those earnings. Those earnings are shown in the ${schoolEarningsColumnLabel()} column.`,
     `It describes the whole school, all programs and degree levels together, not the program shown. It is not comparable to the program-level Median Earnings (Yr 10) column, which covers a different group and a different year.`,
-    `No ratio is shown when typical debt is $0 or not reported, or when earnings are not published. $0 debt can mean the school's students take no federal loans, not that they owe nothing. A missing ratio is not a good or bad sign.`,
-    `Based on past graduates. It is not a prediction of your own debt or earnings.`,
+    `No ratio is shown when debt is $0 or not reported, or when earnings are not published. $0 debt can mean the school's students take no federal loans, not that they owe nothing. A missing ratio is not a good or bad sign.`,
+    `Based on past students. It is not a prediction of your own debt or earnings.`,
   ].join(" ");
 }
 
@@ -66,12 +75,12 @@ export function debtRatioDisclaimer(): string {
  * The debt-to-income definition, as short sentences. Rendered as ONE combined
  * methodology bullet and joined into the payload's
  * debt_income_ratio_definition, so the page and the AI read the same text.
- * `refreshed` is the date the school earnings were last fetched from College
+ * `refreshed` is the date the school figures were last fetched from College
  * Scorecard (see debtRatioRefreshed).
  */
 export function debtRatioDefinitions(refreshed: string): string[] {
   return [
-    `The school's typical debt ÷ the school's median earnings ${DEBT_RATIO_BASIS.methodologyLabel} (College Scorecard, students who received federal aid; field ${DEBT_RATIO_BASIS.apiField}, refreshed ${refreshed}), rounded to 2 decimals and shown as "X.XX : 1" (debt per $1 of earnings).`,
+    `The school-wide ${DEBT_LABEL} ÷ the school's median earnings ${DEBT_RATIO_BASIS.methodologyLabel} (College Scorecard; debt field aid.median_debt.completers.overall; earnings field ${DEBT_RATIO_BASIS.apiField}; data fetched ${refreshed}), rounded to 2 decimals and shown as "X.XX : 1" (debt per $1 of earnings). ${DEBT_VS_EARNINGS_NOTE}`,
     `It describes the whole school, not the program shown, and is not comparable to the program-level Median Earnings (Yr 10) from Census PSEO.`,
     `No ratio is shown when debt is $0 or not reported, or earnings are not published; $0 can mean no federal loans, not zero debt.`,
   ];
@@ -155,11 +164,12 @@ export function debtRatioQuery(): string {
   if (!/^earn_[a-z0-9_]+$/.test(col)) {
     throw new Error(`Invalid debt-ratio earnings column: ${col}`);
   }
-  return `SELECT d.avg_debt, e.${col} AS basis_earnings,
-                 e.scorecard_api_fetched_on AS fetched_on
-            FROM debt_income_ratio d
-            LEFT JOIN earnings e ON e.unitid = d.unitid
-           WHERE d.unitid = $1 LIMIT 1`;
+  // `avg_debt` is the row contract name the callers read; its value is the
+  // Scorecard median debt of completers, not debt_income_ratio.avg_debt.
+  return `SELECT e.median_debt_completers AS avg_debt, e.${col} AS basis_earnings,
+                 to_char(e.scorecard_api_fetched_on, 'YYYY-MM-DD') AS fetched_on
+            FROM earnings e
+           WHERE e.unitid = $1 LIMIT 1`;
 }
 
 /** Row from debtRatioQuery → typical debt, basis earnings and the ratio. */

@@ -8,7 +8,7 @@
  *         admission_disclosure_categories, net_price_public_income,
  *         net_price_private_income, earnings_against_courses_merged, costs,
  *         debt_income_ratio, roi, programs
- * Utils:  calculateAdmissionFit (utils/admissionScore), analyzeRoi (utils/roi)
+ * Utils:  calculateAdmissionFit (utils/admissionScore)
  *
  * Known limitations (intentional, not bugs):
  *  - Vintages: no vintage columns exist, so they are constants below.
@@ -22,7 +22,6 @@ import pool from "../../db/client";
 import type { C1LitePayload } from "./reportPrompt";
 import { calculateAdmissionFit } from "../utils/admissionScore";
 import { ScaledField, toFraction, toPercent } from "../../utils/fieldScale";
-import { analyzeRoi } from "../utils/roi";
 import {
   resolveDebt,
   ratioNumeral,
@@ -32,7 +31,10 @@ import {
   DEBT_RATIO_BASIS,
 } from "../utils/debtRatio";
 import CREDENTIAL_LEVELS from "../../constants/credentials";
-import { getEarningsForProgram } from "../../services/earnings.service";
+import { getEarningsPathForProgram } from "../../services/earnings.service";
+import { cleanProgramName } from "../utils/programName";
+import { schoolSizeLabel } from "../config/sizeCategories.config";
+import { loadDataVintage, monthYearFromIso, type DataVintage } from "../utils/dataVintage";
 import { getAthleticsProfile } from "../../services/athletics.service";
 import { loadSatPositioning } from "./satPositioning.service";
 import { inStateOnCampus, outOfStateOffCampus } from "../utils/stickerPrice";
@@ -51,7 +53,12 @@ import {
 } from "../utils/gradRate";
 
 // ---- vintage constants (no DB columns yet) -----------------------
-const NET_PRICE_VINTAGE = "College Scorecard, October 2026 update";
+// Net price carries the Scorecard release the database holds (scorecard_release),
+// never a month typed into the code. No release row → no month is claimed.
+function netPriceVintage(release: string | null): string {
+  const m = monthYearFromIso(release);
+  return m ? `College Scorecard, ${m} release` : "College Scorecard";
+}
 const ADMISSIONS_VINTAGE = "IPEDS";
 
 // ---- income bracket -> net-price column --------------------------
@@ -192,25 +199,40 @@ async function fetchProgramEarnings(
   programCip?: string,
   credentialLevel?: number | null,
 ) {
+  const none = {
+    earnings: null, vintage: null, method_flag: null, year1: null, year1_vintage: null,
+    year5: null, latest_year1: null, latest_year1_vintage: null, estimated: false,
+  };
   if (programCip && credentialLevel != null) {
-    const resolved = await getEarningsForProgram(unitid, programCip, credentialLevel);
-    const year10 = resolved.year_10;
-    const year1 = resolved.year_1;
-    // First-year earnings, shown on page 4 as context beside the Yr-10 figure.
-    const year1Value = year1?.value != null ? Math.round(year1.value) : null;
-    const year1Vintage =
-      year1Value != null && year1 && year1.cohort !== "0000" ? Number(year1.cohort) : null;
-    if (!year10 || year10.value == null) {
-      return { earnings: null, vintage: null, method_flag: null, year1: year1Value, year1_vintage: year1Vintage };
+    // ONE cohort row supplies year 1, year 5 and year 10 (never a mix of
+    // cohorts); the newest year-1 is returned separately.
+    const path = await getEarningsPathForProgram(unitid, programCip, credentialLevel);
+    const real = (c: string | null | undefined) => (c && c !== "0000" ? Number(c) : null);
+    const val = (m: { value: number | null } | null | undefined) =>
+      m?.value != null ? Math.round(m.value) : null;
+    const latest = path.latest_year_1;
+    const latestFields = {
+      latest_year1: val(latest),
+      latest_year1_vintage: latest ? real(latest.cohort) : null,
+    };
+    if (!path.year_10 || path.year_10.value == null) {
+      return { ...none, ...latestFields };
     }
+    // Same cohort for all three values — a value from another cohort is never used.
+    const estimated = [path.year_1, path.year_5, path.year_10].some(
+      (m) => m != null && m.method !== "user_reported",
+    );
     return {
-      year1: year1Value,
-      year1_vintage: year1Vintage,
-      earnings: Math.round(year10.value),
+      year1: val(path.year_1),
+      year1_vintage: real(path.cohort),
+      year5: val(path.year_5),
+      earnings: Math.round(path.year_10.value),
       // '0000' means this figure isn't tied to any real graduating cohort —
       // citing it as a year would be worse than citing no year at all.
-      vintage: year10.cohort === "0000" ? null : Number(year10.cohort),
-      method_flag: EARNINGS_METHOD_LABELS[year10.method] ?? null,
+      vintage: real(path.cohort),
+      method_flag: EARNINGS_METHOD_LABELS[path.year_10.method] ?? null,
+      estimated,
+      ...latestFields,
     };
   }
   // Aggregate across the school's programs (no specific program resolved).
@@ -221,23 +243,22 @@ async function fetchProgramEarnings(
   const vals = rows
     .map((r: { year_10: number | string }) => Number(r.year_10))
     .filter((v: number) => !Number.isNaN(v));
-  if (!vals.length) return { earnings: null, vintage: null, method_flag: null, year1: null, year1_vintage: null };
+  if (!vals.length) return none;
   const avg = Math.round(
     vals.reduce((a: number, b: number) => a + b, 0) / vals.length,
   );
   return {
-    year1: null,
-    year1_vintage: null,
+    ...none,
     earnings: avg,
-    vintage: "school-level average",
+    vintage: "school-level average" as string | null,
     method_flag: `School-level average across ${vals.length} programs`,
   };
 }
 
-// Sticker price + ROI supplementary blob.
+// Sticker price (costs.sticker_price_by_api).
 async function fetchCosts(unitid: number) {
   const { rows } = await pool.query(
-    `SELECT sticker_price_by_api, for_roi_data FROM costs WHERE unitid = $1 LIMIT 1`,
+    `SELECT sticker_price_by_api FROM costs WHERE unitid = $1 LIMIT 1`,
     [unitid],
   );
   const data = rows[0];
@@ -246,35 +267,14 @@ async function fetchCosts(unitid: number) {
       data?.sticker_price_by_api != null
         ? Math.round(Number(data.sticker_price_by_api))
         : null,
-    forRoi: data?.for_roi_data ?? null, // JSON blob, not itself an ROI figure — see fetchRoi()
   };
 }
 
-// Precomputed 20-year ROI, keyed by unitid + credential_level (via `roi`
-// table). credentialLevel is resolved by the caller (resolveCredentialLevel)
-// from the same programCip fetchProgramEarnings uses; null falls back to the
-// best available row for the school, same fallback used in routes/search.ts.
-async function fetchRoi(unitid: number, credentialLevel: number | null) {
-  const { rows } = await pool.query(
-    `SELECT avg_salary, total_cost, roi_20yr FROM roi
-      WHERE unitid = $1
-      ORDER BY CASE WHEN credential_level = $2 THEN 0 ELSE 1 END
-      LIMIT 1`,
-    [unitid, credentialLevel],
-  );
-  const data = rows[0];
-  return {
-    avgSalary: data?.avg_salary != null ? Number(data.avg_salary) : null,
-    totalCost: data?.total_cost != null ? Number(data.total_cost) : null,
-    roi20Yr: data?.roi_20yr != null ? Number(data.roi_20yr) : null,
-  };
-}
-
-// Typical debt at completion + debt-to-income (federal outcome metric).
+// School-wide median federal debt of completers + debt-to-income.
 async function fetchDebt(unitid: number) {
-  // One query: avg_debt + the single configured earnings column
-  // (DEBT_RATIO_BASIS) — see debtRatioQuery. The ratio is computed in
-  // debtRatio.ts only.
+  // One query: earnings.median_debt_completers + the single configured
+  // earnings column (DEBT_RATIO_BASIS) — see debtRatioQuery. The ratio is
+  // computed in debtRatio.ts only.
   const { rows } = await pool.query(debtRatioQuery(), [unitid]);
   return resolveDebt(rows[0]);
 }
@@ -289,16 +289,17 @@ async function fetchFederalAid(
 ): Promise<{ status: FederalAidStatus | null; fetched_on: string | null }> {
   try {
     const { rows } = await pool.query(
-      `SELECT federal_aid_status, fetched_on FROM school_federal_aid_status WHERE unitid = $1 LIMIT 1`,
+      `SELECT federal_aid_status, to_char(fetched_on, 'YYYY-MM-DD') AS fetched_on
+         FROM school_federal_aid_status WHERE unitid = $1 LIMIT 1`,
       [unitid],
     );
     const r = rows[0];
     if (!r) return { status: null, fetched_on: null };
-    const f = r.fetched_on;
+    // to_char in SQL: a DATE read through the driver is local midnight, and
+    // .toISOString() on a UTC+ host would print the day before.
     return {
       status: normalizeAidStatus(r.federal_aid_status),
-      fetched_on:
-        f instanceof Date ? f.toISOString().slice(0, 10) : f != null ? String(f) : null,
+      fetched_on: r.fetched_on != null ? String(r.fetched_on) : null,
     };
   } catch (err) {
     console.warn(`federal aid status lookup failed for ${unitid}; treating as unknown`, err);
@@ -345,10 +346,10 @@ export async function fetchCampus(unitid: number) {
   // (see utils/gradRate.ts). completion_rate / emp_factor / completed_*yrs
   // are deprecated and are deliberately not selected, so they can't leak
   // into the payload or the AI prompt.
-  const [studentsResult, completionResult] = await Promise.all([
+  const [studentsResult, completionResult, levelResult] = await Promise.all([
     pool.query(
       `SELECT undergrad_12_month, grad_12_month, student_faculty_ratio,
-              retention_rate, demographics_men, demographics_women, size_category
+              retention_rate, demographics_men, demographics_women, size
          FROM students WHERE unitid = $1 LIMIT 1`,
       [unitid],
     ),
@@ -356,7 +357,12 @@ export async function fetchCampus(unitid: number) {
       `SELECT ${GRAD_RATE_COLUMNS.join(", ")} FROM completion WHERE unitid = $1 LIMIT 1`,
       [unitid],
     ),
+    pool.query(
+      `SELECT max(credential_level) AS max_level FROM programs WHERE unitid = $1`,
+      [unitid],
+    ),
   ]);
+  const maxLevel = levelResult.rows[0]?.max_level;
   const data = studentsResult.rows[0];
   const completion = completionResult.rows[0];
   const num = (v: unknown) => (v != null ? Number(v) : null);
@@ -375,12 +381,18 @@ export async function fetchCampus(unitid: number) {
   return {
     enrollment_undergrad: num(data?.undergrad_12_month),
     enrollment_grad: num(data?.grad_12_month),
+    // "No graduate programs" only when grad enrollment is null AND the school's
+    // highest program level is 4 or below (programs.credential_level).
+    no_graduate_programs:
+      data?.grad_12_month == null && maxLevel != null && Number(maxLevel) <= 4,
     student_faculty_ratio: num(data?.student_faculty_ratio),
     graduation_rate: resolveGradRate(completion),
     retention_rate: wholePct("students.retention_rate", data?.retention_rate),
     demographics_men_pct: oneDecimalPct("students.demographics_men", data?.demographics_men),
     demographics_women_pct: oneDecimalPct("students.demographics_women", data?.demographics_women),
-    size_category: data?.size_category ?? null,
+    // Label and number both come from students.size (sizeCategories.config).
+    size: num(data?.size),
+    size_category: schoolSizeLabel(num(data?.size)),
   };
 }
 
@@ -444,36 +456,19 @@ async function fetchTuitionDetail(
 export function computeDerivedFlags(
   studentSat: number | null,
   schools: C1LitePayload["schools"],
-  roi20YrByName: Record<string, number>,
 ): C1LitePayload["derived_flags"] {
-  const merit: string[] = [];
-  const reach: string[] = [];
+  const above: string[] = [];
+  const below: string[] = [];
   for (const s of schools) {
     // Ranges for test-optional / considered-if-submitted schools cover only
-    // students who submitted scores, so they never raise merit/reach flags.
+    // students who submitted scores, so they never raise a score-position flag.
     if (isSubmittedOnlyCategory(s.sat_data_category)) continue;
     if (studentSat != null && s.sat_75 != null && studentSat > s.sat_75)
-      merit.push(s.display_name);
+      above.push(s.display_name);
     if (studentSat != null && s.sat_25 != null && studentSat < s.sat_25)
-      reach.push(s.display_name);
+      below.push(s.display_name);
   }
-  // Factual highest-value ROI figure — NOT a recommendation. Ties resolve to
-  // payload order (first school with the max value).
-  let bestRoiSchool = "";
-  let bestRoi = -Infinity;
-  for (const s of schools) {
-    const v = roi20YrByName[s.display_name];
-    if (v != null && v > bestRoi) {
-      bestRoi = v;
-      bestRoiSchool = s.display_name;
-    }
-  }
-
-  return {
-    merit_flag_schools: merit,
-    reach_flag_schools: reach,
-    best_roi_school: bestRoiSchool,
-  };
+  return { above_p75_schools: above, below_p25_schools: below };
 }
 
 // ------------------------------------------------------------------
@@ -487,17 +482,17 @@ export async function fetchDataCheckedOn(unitids: number[]): Promise<string | nu
   if (unitids.length === 0) return null;
   try {
     const { rows } = await pool.query(
-      `SELECT GREATEST(
+      `SELECT to_char(GREATEST(
          (SELECT max(grad_rate_fetched_on)     FROM completion                 WHERE unitid = ANY($1)),
          (SELECT max(scorecard_api_fetched_on) FROM earnings                   WHERE unitid = ANY($1)),
          (SELECT max(fetched_on)               FROM school_federal_aid_status  WHERE unitid = ANY($1)),
          (SELECT max(fetched_on)               FROM scorecard_admissions_flags WHERE unitid = ANY($1))
-       ) AS data_checked_on`,
+       ), 'YYYY-MM-DD') AS data_checked_on`,
       [unitids],
     );
     const v = rows[0]?.data_checked_on;
     if (v == null) return null;
-    return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+    return String(v).slice(0, 10);
   } catch {
     return null;
   }
@@ -512,11 +507,14 @@ export async function buildC1LitePayload(args: {
 }): Promise<C1LitePayload> {
   const { userId, reportReferenceId } = args;
 
-  const [student, meta, dataCheckedOn] = await Promise.all([
+  const [student, meta, dataCheckedOn, dataVintage] = await Promise.all([
     fetchStudent(userId),
     fetchReportMeta(reportReferenceId),
     fetchDataCheckedOn(args.schools.map((s) => s.unitid)),
+    loadDataVintage(pool),
   ]);
+  const NET_PRICE_VINTAGE = netPriceVintage(dataVintage.release_date);
+  const debtVintage = dataVintage.years["median_debt_completers"];
 
   // An explicit bracket wins; otherwise use the income range the student
   // entered on their profile (usdusers.household_income_range).
@@ -534,7 +532,6 @@ export async function buildC1LitePayload(args: {
       : null);
 
   const out: C1LitePayload["schools"] = [];
-  const roi20YrByName: Record<string, number> = {};
   const aidFetchedOn: string[] = [];
   // Cache each unitid's core school row so the college_details pass below
   // (deduped one-per-college) doesn't re-query schools for unitids already
@@ -542,7 +539,8 @@ export async function buildC1LitePayload(args: {
   // args.schools, once per compared program.
   const schoolCache = new Map<number, Awaited<ReturnType<typeof fetchSchool>>>();
 
-  for (const { unitid, programCip, programName } of args.schools) {
+  for (const { unitid, programCip, programName: rawProgramName } of args.schools) {
+    const programName = cleanProgramName(rawProgramName) ?? undefined;
     const core = await fetchSchool(unitid);
     schoolCache.set(unitid, core);
     const credentialLevel = programCip
@@ -556,13 +554,12 @@ export async function buildC1LitePayload(args: {
       ? `${core.name} — ${programName}${credentialLevelName ? ` (${credentialLevelName})` : ""}`
       : core.name;
 
-    const [np, adm, earn, costs, debt, roi, aid] = await Promise.all([
+    const [np, adm, earn, costs, debt, aid] = await Promise.all([
       fetchNetPriceAndSector(unitid, incomeBracket),
       fetchAdmissions(unitid),
       fetchProgramEarnings(unitid, programCip, credentialLevel),
       fetchCosts(unitid),
       fetchDebt(unitid),
-      fetchRoi(unitid, credentialLevel),
       fetchFederalAid(unitid),
     ]);
     if (aid.fetched_on) aidFetchedOn.push(aid.fetched_on);
@@ -630,19 +627,6 @@ export async function buildC1LitePayload(args: {
       }
     }
 
-    // ROI — roi_20yr is a real precomputed figure (roi table), NOT derived
-    // from costs.for_roi_data (that column is an unrelated JSON blob). We
-    // run it through the existing analyzeRoi() util rather than formatting
-    // it ourselves, and never invent a figure when roi_20yr is null.
-    const roiResult = analyzeRoi({
-      unitid,
-      totalCost: roi.totalCost,
-      avgSalary: roi.avgSalary,
-      roi20Yr: roi.roi20Yr,
-    });
-
-    if (roi.roi20Yr != null) roi20YrByName[displayName] = roi.roi20Yr;
-
     const rowForFigures = {
       net_price_bracket: np.value,
       program_earnings: earn.earnings,
@@ -673,9 +657,14 @@ export async function buildC1LitePayload(args: {
       program_earnings: earn.earnings,
       earnings_vintage: earn.vintage,
       earnings_method_flag: earn.method_flag,
+      // Year 1 / 5 / 10 all from the ONE cohort in earnings_vintage.
       earnings_year_1: earn.year1,
       earnings_year_1_vintage: earn.year1_vintage,
-      roi_ratio: roi.roi20Yr != null ? roiResult.roiFormatted : null,
+      earnings_year_5: earn.year5,
+      // Newest cohort's year 1 — printed only as its own labelled line.
+      earnings_latest_year_1: earn.latest_year1,
+      earnings_latest_year_1_cohort: earn.latest_year1_vintage,
+      earnings_estimated: earn.estimated,
       sticker_price: costs.sticker,
       sticker_vintage: costs.sticker != null ? NET_PRICE_VINTAGE : null,
       avg_debt: debt.avg_debt,
@@ -689,7 +678,12 @@ export async function buildC1LitePayload(args: {
       // Two-decimal numeral ("0.30") so narrative text traces character-for-
       // character even when the number serialises without the trailing zero.
       debt_income_ratio_display: ratioNumeral(debt.ratio),
-      debt_vintage: debt.avg_debt != null ? "College Scorecard" : null,
+      debt_vintage:
+        debt.avg_debt != null
+          ? debtVintage != null
+            ? `College Scorecard, data year ${debtVintage}`
+            : "College Scorecard"
+          : null,
       federal_aid_status: aid.status ?? "unknown",
       // Per-school value-or-reason strings the narrative must use as given.
       figures: schoolFigures(rowForFigures),
@@ -773,7 +767,8 @@ export async function buildC1LitePayload(args: {
     debt_income_ratio_definition: debtRatioDefinitionText(
       debtRatioRefreshed(out, generatedDate),
     ),
-    derived_flags: computeDerivedFlags(studentTotalSat, out, roi20YrByName),
+    derived_flags: computeDerivedFlags(studentTotalSat, out),
+    data_vintage: dataVintage,
     // Same sentence the fallback narrative uses; the AI must copy it verbatim
     // if it mentions graduation rate at all.
     graduation_rate_definition: GRAD_RATE_METHODOLOGY,

@@ -2,13 +2,16 @@ import React from "react";
 import type { C1LitePayload, C1LiteNarrative } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
+import { dataYearsSentence } from "../utils/dataVintage";
+import { formatUsd } from "./format";
 
 import NoAidBox from "./NoAidBox";
 import {
   schoolFigures,
   takesNoFederalAid,
   TABLE_NOT_PUBLISHED,
-  TYPICAL_DEBT_FOOTNOTE,
+  typicalDebtFootnote,
+  cohortText,
 } from "../utils/missingValue";
 import {
   formatDebtIncomeRatio,
@@ -41,7 +44,7 @@ export default function CareerOutcomes({
       <div>
         <PageHeader
           sectionLabel="SECTION 04 · EARNINGS & DEBT"
-          title="Program Earnings & Typical Debt"
+          title="Program Earnings & School-wide Debt"
         />
 
         {/* Narrative */}
@@ -79,7 +82,7 @@ export default function CareerOutcomes({
               marginBottom: "4px",
             }}
           >
-            Typical Debt at Completion (School level)
+            School-wide median federal debt of completers
           </div>
           <p style={{ margin: 0, color: theme.color.ink }}>
             {narrative.debt_burden_paragraph}
@@ -105,20 +108,24 @@ export default function CareerOutcomes({
               }}
             >
               <th style={{ padding: "8px", fontWeight: 600 }}>College</th>
+              {[
+                ["Earnings (Yr 1)", "after graduation"],
+                ["Earnings (Yr 5)", "after graduation"],
+                ["Median Earnings (Yr 10)", "after graduation"],
+                [schoolEarningsColumnLabel(), "after first enrolling; school-wide, all entrants who received aid"],
+              ].map(([t, sub]) => (
+                <th
+                  key={t}
+                  style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
+                >
+                  {t}
+                  <div style={{ fontSize: "8px", fontWeight: 400, opacity: 0.85 }}>{sub}</div>
+                </th>
+              ))}
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
               >
-                Median Earnings (Yr 10)
-              </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
-                {schoolEarningsColumnLabel()}
-              </th>
-              <th
-                style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
-              >
-                Typical Debt
+                School-wide median federal debt of completers
               </th>
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
@@ -157,6 +164,14 @@ export default function CareerOutcomes({
                     </div>
                   )}
                 </td>
+                {[s.earnings_year_1, s.earnings_year_5].map((v, k) => (
+                  <td
+                    key={k}
+                    style={{ padding: "8px", textAlign: "right", color: theme.color.ink }}
+                  >
+                    {v != null ? formatUsd(v) : "Not published"}
+                  </td>
+                ))}
                 <td
                   style={{
                     padding: "8px",
@@ -166,8 +181,13 @@ export default function CareerOutcomes({
                   }}
                 >
                   {s.program_earnings != null
-                    ? `$${s.program_earnings.toLocaleString()}`
+                    ? formatUsd(s.program_earnings)
                     : "Not published"}
+                  {s.program_earnings != null && (
+                    <div style={{ fontSize: "8px", fontWeight: 400, color: theme.color.inkMuted }}>
+                      {cohortText(s.earnings_vintage)} (years 1, 5 and 10 from this one cohort)
+                    </div>
+                  )}
                 </td>
                 <td
                   style={{
@@ -177,7 +197,7 @@ export default function CareerOutcomes({
                   }}
                 >
                   {s.debt_income_earnings != null
-                    ? `$${s.debt_income_earnings.toLocaleString()}`
+                    ? formatUsd(s.debt_income_earnings)
                     : "Not published"}
                 </td>
                 <td
@@ -237,8 +257,55 @@ export default function CareerOutcomes({
             margin: "-12px 0 12px 0",
           }}
         >
-          {TYPICAL_DEBT_FOOTNOTE}
+          {typicalDebtFootnote(
+            schools.filter((s) => takesNoFederalAid(s)).map((s) => s.name),
+          )}
         </p>
+
+        {/* Newest year 1 on file, only where it is a different cohort than the row above. */}
+        {schools.some(
+          (s) =>
+            s.earnings_latest_year_1 != null &&
+            s.earnings_latest_year_1_cohort != null &&
+            s.earnings_latest_year_1_cohort !== s.earnings_year_1_vintage,
+        ) && (
+          <p
+            style={{
+              fontSize: "10px",
+              lineHeight: "1.5",
+              color: theme.color.inkMuted,
+              margin: "-4px 0 12px 0",
+            }}
+          >
+            Newest year-1 earnings on file (a separate, newer cohort — not part of the one-cohort path in the table):{" "}
+            {schools
+              .filter(
+                (s) =>
+                  s.earnings_latest_year_1 != null &&
+                  s.earnings_latest_year_1_cohort != null &&
+                  s.earnings_latest_year_1_cohort !== s.earnings_year_1_vintage,
+              )
+              .map(
+                (s) =>
+                  `${s.name} ${formatUsd(s.earnings_latest_year_1)} (${s.earnings_latest_year_1_cohort} cohort)`,
+              )
+              .join("; ")}
+            .
+          </p>
+        )}
+
+        {dataYearsSentence(payload.data_vintage) && (
+          <p
+            style={{
+              fontSize: "10px",
+              lineHeight: "1.5",
+              color: theme.color.inkMuted,
+              margin: "-4px 0 12px 0",
+            }}
+          >
+            {dataYearsSentence(payload.data_vintage)}
+          </p>
+        )}
 
         {/* Earnings method footnotes — vintage years are deliberately omitted;
             only the method flag (e.g. Census-reported) is surfaced. Schools with

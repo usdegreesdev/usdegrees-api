@@ -1,4 +1,5 @@
 import React from "react";
+import { monthYearFromIso } from "../utils/dataVintage";
 import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
 import { STICKER_FOOTNOTE, type StickerScenario } from "../utils/stickerPrice";
@@ -41,6 +42,7 @@ export default function TuitionCosts({
   totalPages,
 }: TuitionCostsProps) {
   const { college_details } = payload;
+  const releaseMonth = monthYearFromIso(payload.data_vintage?.release_date);
   // Few colleges leave the page mostly empty, so rows get extra breathing room.
   const roomy = college_details.length <= 2;
   // 5+ colleges would overflow the page, so tighten rows/columns a little.
@@ -199,8 +201,7 @@ export default function TuitionCosts({
         <p style={{ ...note, margin: "8px 0 0 0" }}>
           Net Price is the average annual price after grants and scholarships for
           students in your household income range, taken from the U.S.
-          Department of Education's College Scorecard API (October 2026
-          update), which reports net price by income bracket for each school.
+          Department of Education's College Scorecard API{releaseMonth ? ` (${releaseMonth} release)` : ""}, which reports net price by income bracket for each school.
           It shows “Not published” when the school reports no figure for your
           bracket.
         </p>

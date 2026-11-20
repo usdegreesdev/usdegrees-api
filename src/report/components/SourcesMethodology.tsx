@@ -60,6 +60,7 @@ const SOURCES: SourceRow[] = [
 ];
 
 export default function SourcesMethodology({
+  payload,
   reportId,
   generatedDate,
   pageNumber,
@@ -179,12 +180,9 @@ export default function SourcesMethodology({
           >
             We do not buy, sell, or blend data with commercial or institutional
             sources. Missing figures in the underlying federal datasets are
-            shown as N/A — never estimated, except for program earnings where
-            Census PSEO data is unavailable. Such earnings estimates are
-            clearly labelled and derived only from real reported earnings using
-            program- and credential-level growth patterns. They are never
-            generated from other estimates and should be treated as indicative,
-            not as measured earnings for a specific program.
+            shown as Not published — never estimated.
+            {payload.schools.some((s) => s.earnings_estimated === true) &&
+              " The one exception is program earnings where Census PSEO data is unavailable: such estimates are clearly labelled, derived only from real reported earnings, never generated from other estimates, and should be treated as indicative, not as measured earnings for a specific program."}
           </p>
         </div>
       </div>

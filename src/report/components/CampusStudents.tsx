@@ -1,3 +1,4 @@
+import { ENROLLMENT_12_MONTH_HEADER } from "../config/sizeCategories.config";
 import React from "react";
 import type { C1LitePayload } from "../services/reportPrompt";
 import { theme } from "./theme";
@@ -23,7 +24,7 @@ function pctDecimal(v: number | null): string {
 }
 
 function num(v: number | null): string {
-  return v != null ? v.toLocaleString() : "Not Published";
+  return v != null ? v.toLocaleString() : "Not published";
 }
 
 /**
@@ -82,12 +83,14 @@ export default function CampusStudents({
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
               >
-                Undergrad Enrollment
+                Undergrad enrollment
+                <div style={{ fontSize: "8px", fontWeight: 400 }}>{ENROLLMENT_12_MONTH_HEADER}</div>
               </th>
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
               >
-                Grad Enrollment
+                Grad enrollment
+                <div style={{ fontSize: "8px", fontWeight: 400 }}>{ENROLLMENT_12_MONTH_HEADER}</div>
               </th>
               <th
                 style={{ padding: "8px", fontWeight: 600, textAlign: "right" }}
@@ -144,7 +147,9 @@ export default function CampusStudents({
                     color: theme.color.ink,
                   }}
                 >
-                  {num(c.campus.enrollment_grad)}
+                  {c.campus.enrollment_grad == null && c.campus.no_graduate_programs
+                    ? "No graduate programs"
+                    : num(c.campus.enrollment_grad)}
                 </td>
                 <td
                   style={{
@@ -188,7 +193,7 @@ export default function CampusStudents({
             margin: "0 0 24px 0",
           }}
         >
-          Undergraduate and graduate enrollment figures reflect the unduplicated
+          The size label is based on the institution's reported student body size; the enrollment columns use a different basis. Undergraduate and graduate enrollment figures reflect the unduplicated
           count of students enrolled at any point during the most recent
           12-month reporting period (not a single-day snapshot), as reported by
           the institution to IPEDS. {GRAD_RATE_LABEL}: {GRAD_RATE_MEASURES}, from
@@ -235,8 +240,10 @@ export default function CampusStudents({
                 {c.campus.demographics_men_pct != null ||
                 c.campus.demographics_women_pct != null
                   ? `${pctDecimal(c.campus.demographics_men_pct)} men · ${pctDecimal(c.campus.demographics_women_pct)} women`
-                  : "Demographic breakdown not published"}
-                {c.campus.size_category ? ` · ${c.campus.size_category}` : ""}
+                  : "Demographic breakdown: Not published"}
+                {c.campus.size_category && c.campus.size != null
+                  ? ` · ${c.campus.size_category} (${c.campus.size.toLocaleString()} students)`
+                  : ""}
               </div>
             </div>
           ))}

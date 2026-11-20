@@ -22,7 +22,7 @@ const school = (name: string, fit_label: string): any => ({
 
 const payload: any = {
   schools: [school("No SAT U", "Unavailable"), school("Open U", "Not applicable")],
-  derived_flags: { merit_flag_schools: [], reach_flag_schools: [] },
+  derived_flags: { above_p75_schools: [], below_p25_schools: [] },
   student: { display_name: "S", sat_score: 1300, income_bracket_label: null },
 };
 

@@ -38,9 +38,9 @@ export const SAT_SUBMITTED_ONLY_CATEGORIES: ReadonlySet<string> = new Set([
 export const isSubmittedOnlyCategory = (c: string | null | undefined): boolean =>
   c != null && SAT_SUBMITTED_ONLY_CATEGORIES.has(c);
 
-/** Page-4 reason for schools whose SAT range covers only students who submitted scores. */
+/** Page-4 reason, printed after the school's own badge label (the same label the SAT page shows). */
 export const FIT_NA_SUBMITTED_REASON =
-  "Fit is not applicable: test scores are optional or considered if submitted";
+  "fit is not applicable";
 
 /**
  * fit_label "Unavailable": the school publishes no SAT average or full SAT

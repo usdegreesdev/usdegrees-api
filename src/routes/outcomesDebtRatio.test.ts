@@ -18,7 +18,7 @@ let debtRow: Record<string, unknown> | undefined;
 
 (pool as any).query = async (sql: string) => {
   queries.push(sql);
-  if (/FROM debt_income_ratio d/.test(sql)) return { rows: debtRow ? [debtRow] : [], rowCount: debtRow ? 1 : 0 };
+  if (/FROM earnings e/.test(sql)) return { rows: debtRow ? [debtRow] : [], rowCount: debtRow ? 1 : 0 };
   if (/FROM earnings_against_courses_merged/.test(sql)) {
     // A stale stored ratio that must NOT be served.
     return { rows: [{ year_1: 40000, debt_income_ratio: 0.4 }], rowCount: 1 };
@@ -49,7 +49,7 @@ test("ratio = avg_debt ÷ school median earnings, same as the report", async () 
   assert.equal(d.basis_earnings, 48000);
   assert.equal(d.basis_label, DEBT_RATIO_BASIS.label);
   assert.equal(d.basis_api_field, DEBT_RATIO_BASIS.apiField);
-  assert.match(d.definition, /typical debt/);
+  assert.match(d.definition, /median federal debt of completers/);
   assert.notEqual(d.debt_income_ratio, 0.4); // never the stored column
 });
 

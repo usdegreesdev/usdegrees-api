@@ -123,7 +123,7 @@ test("prompt and fallback wording", () => {
   assert.ok(prompt.includes("never combine or compare the three figures"));
   assert.ok(prompt.includes("never describe a missing figure as $0"));
   const note = costOfAttendanceNote(p);
-  assert.ok(note.includes("in-state tuition living on campus not published (missing: on-campus room and board, on-campus other expenses)"));
+  assert.ok(note.includes("in-state tuition living on campus Not published (missing: on-campus room and board, on-campus other expenses)"));
   assert.ok(note.includes("College Scorecard average cost of attendance $17,733 (2024-25)"));
   assert.ok(note.includes("Grove City College: sticker price for in-state tuition living on campus $37,190"));
   assert.ok(!note.includes("$0") && !note.includes("$6,720"));

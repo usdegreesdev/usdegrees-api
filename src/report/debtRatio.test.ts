@@ -112,13 +112,13 @@ test("rendered section: 0.35 / 0.14 / missing, new note, no old wording", () => 
   for (const bad of ["0.32 : 1", "0.18", "0.00 : 1", "1:3.1", "Cannot be calculated", "school-wide average earnings"]) {
     assert.ok(!html.includes(bad), bad);
   }
-  assert.ok(html.includes("Debt-to-income ratio = typical debt ÷ school-wide median earnings 6 years after first enrolling (College Scorecard, students who received federal aid)."));
+  assert.ok(html.includes("Debt-to-income ratio = school-wide median federal debt of completers ÷ school-wide median earnings 6 years after first enrolling (College Scorecard). Debt is for students who completed; Year-6 earnings cover all entrants who received federal aid."));
 });
 
 test("methodology text", () => {
   const html = renderMethodology();
   // One combined, short Debt-to-Income bullet; no separate "How to read" block.
-  assert.ok(html.includes("The school&#x27;s typical debt ÷ the school&#x27;s median earnings 6 years after students first enrolled (College Scorecard, students who received federal aid;"));
+  assert.ok(html.includes("The school-wide median federal debt of completers ÷ the school&#x27;s median earnings 6 years after students first enrolled (College Scorecard; debt field aid.median_debt.completers.overall;"));
   assert.ok(html.includes("It describes the whole school, not the program shown"));
   assert.ok(!html.includes("How to read the debt-to-income figures"));
   assert.ok(!html.includes("20-Year ROI"));
@@ -134,7 +134,7 @@ test("prompt + fallback follow the basis", () => {
   assert.ok(!prompt.includes("school-wide average earnings"));
   const n = buildFallbackNarrative({
     schools: [schoolRow("A", 15722, 45299), schoolRow("B", 0, null)],
-    derived_flags: { merit_flag_schools: [], reach_flag_schools: [] },
+    derived_flags: { above_p75_schools: [], below_p25_schools: [] },
     student: {},
   } as any);
   assert.ok(n.debt_burden_paragraph.includes("0.35 : 1"));
@@ -174,7 +174,7 @@ test("disclaimer and definitions render, carry the basis, hardcode no timing", (
   const disclaimer = debtRatioDisclaimer();
   assert.ok(section.includes(disclaimer));
   assert.ok(disclaimer.includes(DEBT_RATIO_BASIS.label));
-  assert.ok(disclaimer.includes("A ratio of 0.35 : 1 means typical debt is about 35% of one year of those earnings."));
+  assert.ok(disclaimer.includes("A ratio of 0.35 : 1 means debt is about 35% of one year of those earnings."));
   assert.ok(disclaimer.includes("not comparable to the program-level Median Earnings (Yr 10) column"));
   assert.ok(disclaimer.includes("$0 debt can mean the school's students take no federal loans"));
   assert.ok(disclaimer.includes("not a prediction of your own debt or earnings"));
@@ -187,7 +187,7 @@ test("disclaimer and definitions render, carry the basis, hardcode no timing", (
   const defs = lines.join(" ");
   assert.ok(defs.includes(DEBT_RATIO_BASIS.methodologyLabel));
   assert.ok(defs.includes(DEBT_RATIO_BASIS.apiField));
-  assert.ok(defs.includes("refreshed October 2026"));
+  assert.ok(defs.includes("data fetched October 2026"));
 
   // No "6 years" outside DEBT_RATIO_BASIS: the source files must not contain it.
   const fs = require("node:fs");

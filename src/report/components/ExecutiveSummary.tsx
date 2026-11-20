@@ -30,10 +30,10 @@ export default function ExecutiveSummary({
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "16px", marginBottom: "22px" }}>
           <div style={{ backgroundColor: theme.color.panelBgAlt, borderRadius: "12px", padding: "18px", border: `1px solid ${theme.color.goldSoft}`, borderLeft: `3px solid ${theme.color.gold}` }}>
             <h3 style={{ fontSize: "13px", fontWeight: 700, color: theme.color.gold, margin: "0 0 8px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Critical Finding
+              Test Score Position
             </h3>
             <p style={{ fontSize: "12.5px", lineHeight: "1.6", margin: 0, color: theme.color.navy, fontWeight: 500 }}>
-              {narrative.critical_finding}
+              {narrative.score_position_note}
             </p>
           </div>
         </div>
@@ -78,5 +78,5 @@ export default function ExecutiveSummary({
 const FIGURE_ROWS: Array<{ label: string; metric: FigureMetric }> = [
   { label: "Net price", metric: "net_price" },
   { label: "Program earnings", metric: "program_earnings" },
-  { label: "Typical debt", metric: "typical_debt" },
+  { label: "School-wide median federal debt of completers", metric: "typical_debt" },
 ];

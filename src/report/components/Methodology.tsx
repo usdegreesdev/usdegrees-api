@@ -6,6 +6,8 @@ import { debtRatioMethodology, debtRatioRefreshed } from "../utils/debtRatio";
 import { STICKER_METHODOLOGY } from "../utils/stickerPrice";
 import { GRAD_RATE_METHODOLOGY } from "../utils/gradRate";
 import { missingFiguresMethodology } from "../utils/missingValue";
+import { dataYearsSentence } from "../utils/dataVintage";
+import { earningsLabelsUsed, EARNINGS_LABEL_TEXT, NOT_PUBLISHED_LABEL_TEXT } from "../utils/earningsLabels";
 
 export interface MethodologyProps {
   payload: C1LitePayload;
@@ -22,6 +24,7 @@ export default function Methodology({
   pageNumber,
   totalPages,
 }: MethodologyProps) {
+  const earned = earningsLabelsUsed(payload?.schools ?? []);
   return (
     <div style={pageStyle}>
       <div>
@@ -91,63 +94,46 @@ export default function Methodology({
                 <strong>• Missing figures:</strong>{" "}
                 {missingFiguresMethodology(payload?.federal_aid_fetched_on)}
               </div>
+              {dataYearsSentence(payload?.data_vintage) && (
+                <div>
+                  <strong>•</strong> {dataYearsSentence(payload?.data_vintage)}
+                </div>
+              )}
               <div>
-                <strong>
-                  • Program Earnings Data Imputation — U.S. Degrees Methodology:
-                </strong>{" "}
-                Where PSEO program earnings are missing, U.S. Degrees may
-                provide modelled values derived only from real, reported
-                earnings data using credential- and field-specific growth
-                patterns. Estimates are never chained from other estimates, and
-                values without a valid real-data anchor are not generated.
-                {/* Earnings methodology labels */}
-                <div
-                  style={{
-                    marginTop: "7px",
-                    marginLeft: "12px",
-                    paddingLeft: "10px",
-                    borderLeft: `2px solid ${theme.color.gold}`,
-                    fontSize: "10.5px",
-                    lineHeight: "1.45",
-                    color: theme.color.inkMuted,
-                  }}
-                >
+                <strong>• Program earnings:</strong> Program-level earnings
+                come from Census PSEO for one graduating cohort: year 1, year 5
+                and year 10 after graduation are all read from that same
+                cohort. A newer cohort&apos;s year 1, when shown, is labelled
+                separately. {earned.estimated
+                  ? "Where PSEO program earnings are missing, a clearly labelled estimate derived only from real reported earnings is shown; estimates are never chained from other estimates."
+                  : "No estimated earnings appear in this report."}
+                {(earned.labels.length > 0 || earned.anyNotPublished) && (
                   <div
                     style={{
-                      fontWeight: 700,
-                      color: theme.color.navy,
-                      marginBottom: "3px",
+                      marginTop: "7px",
+                      marginLeft: "12px",
+                      paddingLeft: "10px",
+                      borderLeft: `2px solid ${theme.color.gold}`,
+                      fontSize: "10.5px",
+                      lineHeight: "1.45",
+                      color: theme.color.inkMuted,
                     }}
                   >
-                    Earnings value labels:
+                    <div style={{ fontWeight: 700, color: theme.color.navy, marginBottom: "3px" }}>
+                      Earnings labels used in this report:
+                    </div>
+                    {earned.labels.map((l) => (
+                      <div key={l}>
+                        <strong>{l}:</strong> {EARNINGS_LABEL_TEXT[l]}
+                      </div>
+                    ))}
+                    {earned.anyNotPublished && (
+                      <div>
+                        <strong>Not published:</strong> {NOT_PUBLISHED_LABEL_TEXT}
+                      </div>
+                    )}
                   </div>
-
-                  <div>
-                    <strong>Census-reported:</strong> Real PSEO value — measured, not
-                    estimated.
-                  </div>
-
-                  <div>
-                    <strong>Estimated (between two real values):</strong>{" "}
-                    Estimated between two real points; most reliable estimate.
-                  </div>
-
-                  <div>
-                    <strong>Estimated (from one nearby real value):</strong>{" "}
-                    Estimated from a nearer real-data anchor.
-                  </div>
-
-                  <div>
-                    <strong>Estimated — low confidence:</strong> Single-anchor
-                    or declining-trajectory estimate; use with caution.
-                  </div>
-
-                  <div>
-                    <strong>Not published:</strong> No value is shown because
-                    the outcome year has not yet occurred or no real value was
-                    available to anchor an estimate.
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -174,9 +160,9 @@ export default function Methodology({
               }}
             >
               Neutral and comparative only — this report does not rank or
-              recommend a school. Figures come from public federal datasets;
-              labelled estimates appear only where Census PSEO program earnings
-              are missing. Confirm all figures with each institution before
+              recommend a school. Figures come from public federal datasets
+              {earned.estimated ? "; labelled estimates appear only where Census PSEO program earnings are missing. " : ". "}
+              Confirm all figures with each institution before
               deciding.
             </p>
           </div>
@@ -213,7 +199,7 @@ export default function Methodology({
                 color: theme.color.navy,
               }}
             >
-              SOURCES DOCUMENTED · CALCULATIONS RE-CHECKED
+              SOURCES DOCUMENTED
             </div>
           </div>
           <div style={{ textAlign: "right" }}>

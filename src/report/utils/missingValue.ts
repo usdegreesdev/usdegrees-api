@@ -22,18 +22,20 @@ export type FigureMetric = "net_price" | "program_earnings" | "typical_debt";
 /** All reason strings live here. */
 export const MISSING_REASONS = {
   noFederalAid: "takes no federal student aid",
-  notPublishedScorecard: "not published by College Scorecard",
-  notPublished: "not published",
+  // One wording, one capitalisation, everywhere a missing figure is printed.
+  notPublishedScorecard: "Not published",
+  notPublished: "Not published",
 } as const;
 
 /** Methodology page "Missing figures" text; fetchedOn is the table's fetched_on (ISO date). */
 export function missingFiguresMethodology(fetchedOn?: string | null): string {
-  const d = fetchedOn ? new Date(fetchedOn) : null;
+  // fetchedOn is already a plain "YYYY-MM-DD" (school_federal_aid_status.fetched_on
+  // via to_char); it is printed as stored, never re-parsed through a timezone.
   const snapshot =
-    d && !Number.isNaN(d.getTime())
-      ? `; snapshot fetched on ${d.toISOString().slice(0, 10)}`
+    fetchedOn && /^\d{4}-\d{2}-\d{2}/.test(fetchedOn)
+      ? `; snapshot fetched on ${fetchedOn.slice(0, 10)}`
       : "";
-  return `Net price, school-level earnings and federal-loan debt are built from students who received federal aid, so they are not published for schools that take no federal aid (status derived from Scorecard's Title IV eligibility type and Pell and first-year loan rates${snapshot}). Program earnings come from Census PSEO and are missing for a different reason.`;
+  return `Net price, school-level earnings and federal-loan debt (school-wide median federal debt of completers) are built from students who received federal aid, so they are not published for schools that take no federal aid (status derived from Scorecard's Title IV eligibility type and Pell and first-year loan rates${snapshot}). Program earnings come from Census PSEO and are missing for a different reason.`;
 }
 
 /** Small box shown in a no-federal-aid school's net price / typical debt cell. */
@@ -43,8 +45,21 @@ export const NO_AID_BOX_TEXT =
 /** Table-cell wording for a missing figure (capitalised). */
 export const TABLE_NOT_PUBLISHED = "Not published";
 
-export const TYPICAL_DEBT_FOOTNOTE =
-  "Typical debt is shown only where College Scorecard publishes it. A school that takes no federal student aid has no federal-loan debt figure; that is not the same as zero debt. Net price is shown as 'Not published' where Scorecard has no figure.";
+/** Wording for the program-level debt data limit (program_debt has no rows). */
+export const SCHOOL_WIDE_DEBT_SCOPE =
+  "This report shows school-wide debt. Program-level debt is not included.";
+
+/**
+ * Page-6 footnote. `noAidSchools` are the schools with status no_federal_aid;
+ * they are named so the reader sees that federal-loan figures do not apply to them.
+ */
+export function typicalDebtFootnote(noAidSchools: string[] = []): string {
+  const named = [...new Set(noAidSchools)];
+  const noAid = named.length
+    ? ` Federal-loan debt and net price do not apply to ${named.join(", ")}, which takes no federal student aid.`
+    : "";
+  return `School-wide median federal debt of completers is shown only where College Scorecard publishes it. A school that takes no federal student aid has no federal-loan debt figure; that is not the same as zero debt.${noAid} Net price is shown as 'Not published' where Scorecard has no figure. ${SCHOOL_WIDE_DEBT_SCOPE}`;
+}
 
 export interface Figure {
   /** The value when one exists, else null. */
@@ -121,7 +136,7 @@ export function figureCompleteness(schools: FigureInput[]): FigureCompleteness {
     net_price: np,
     program_earnings: pe,
     typical_debt: td,
-    line: `Figures published: net price ${np} of ${total}, program earnings ${pe} of ${total}, typical debt ${td} of ${total}.`,
+    line: `Figures published: net price ${np} of ${total}, program earnings ${pe} of ${total}, school-wide debt ${td} of ${total}.`,
   };
 }
 
@@ -129,15 +144,16 @@ export interface EarningsContextInput {
   earnings_vintage?: number | string | null;
   earnings_year_1?: number | null;
   earnings_year_1_vintage?: number | null;
+  earnings_year_5?: number | null;
+  earnings_latest_year_1?: number | null;
+  earnings_latest_year_1_cohort?: number | null;
 }
 
-/** "10 years after graduation; 2016 cohort" — which point in time, and whose cohort. */
-function earningsBasis(horizon: string, vintage: number | string | null | undefined): string {
-  if (typeof vintage === "number" && Number.isFinite(vintage)) {
-    return `${horizon}; ${vintage} cohort`;
-  }
-  if (typeof vintage === "string" && vintage) return `${horizon}; ${vintage}`;
-  return horizon;
+/** "2010 cohort" / "school-level average" / "cohort year not recorded". */
+export function cohortText(vintage: number | string | null | undefined): string {
+  if (typeof vintage === "number" && Number.isFinite(vintage)) return `${vintage} cohort`;
+  if (typeof vintage === "string" && vintage) return vintage;
+  return "cohort year not recorded";
 }
 
 export interface TextPart {
@@ -164,13 +180,27 @@ export function figureRowParts(
     }
     parts.push({ text: f.display, bold: true });
     if (metric === "program_earnings") {
-      parts.push({ text: ` (${earningsBasis("10 years after graduation", s.earnings_vintage)}); first year ` });
-      const y1 = resolveFigure("program_earnings", s.earnings_year_1, null);
-      if (y1.value != null) {
-        parts.push({ text: y1.display, bold: true });
-        if (s.earnings_year_1_vintage) parts.push({ text: ` (${s.earnings_year_1_vintage} cohort)` });
-      } else {
-        parts.push({ text: y1.display });
+      // One cohort row: year 10 (after graduation) with year 1 and year 5 of the SAME cohort.
+      parts.push({ text: ` (year 10 after graduation; ${cohortText(s.earnings_vintage)})` });
+      const path: Array<[string, Figure]> = [
+        ["year 1", resolveFigure("program_earnings", s.earnings_year_1, null)],
+        ["year 5", resolveFigure("program_earnings", s.earnings_year_5, null)],
+      ];
+      const shown = path.filter(([, f]) => f.value != null);
+      shown.forEach(([label, f], i) => {
+        parts.push({ text: `${i === 0 ? "; same cohort: " : ", "}${label} ` });
+        parts.push({ text: f.display, bold: true });
+      });
+      // Newest year 1 is its own line and is only shown when it is another cohort.
+      const ly = resolveFigure("program_earnings", s.earnings_latest_year_1, null);
+      if (
+        ly.value != null &&
+        s.earnings_latest_year_1_cohort != null &&
+        s.earnings_latest_year_1_cohort !== s.earnings_year_1_vintage
+      ) {
+        parts.push({ text: ". Newest year 1 on file (a different, newer cohort; not part of the path above): " });
+        parts.push({ text: ly.display, bold: true });
+        parts.push({ text: ` (${s.earnings_latest_year_1_cohort} cohort)` });
       }
     }
     return parts;
