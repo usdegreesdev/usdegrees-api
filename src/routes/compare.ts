@@ -8,6 +8,11 @@ import { EarningsAvgSalaryResolved } from "../types/earnings";
 import { getEarningsForProgram } from "../services/earnings.service";
 import { sendInternalError } from "../utils/apiError";
 import { publishedGradRatePct } from "../report/utils/gradRate";
+import {
+  normalizeCipCode,
+  normalizeDegreeBucket,
+  normalizeStateCode,
+} from "../utils/preferenceAlignment";
 
 const router = Router();
 
@@ -122,6 +127,11 @@ interface SelectedItem {
   schoolUrl: string | null; // schools.school_url, normalized to absolute
   schoolType: string | null; // programs.school_type, e.g. "Public, 4-year"
   accreditor: string | null; // schools.accreditor
+  // Academic-alignment fields (nullable). cipCode/degreeLevel describe the
+  // SELECTED program only; null when no program is selected.
+  cipCode: string | null; // dotted, e.g. "11.07"
+  degreeLevel: string | null; // certificate|associate|bachelor|master|doctorate
+  stateCode: string | null; // 2-letter, schools.state
   academics: {
     satRangeLow: number | null; // admissions.school_min_range (or summed p25 math+reading)
     satRangeHigh: number | null; // admissions.school_max_range (or summed p75 math+reading)
@@ -217,6 +227,21 @@ function toFloat(val: unknown): number | null {
   if (val === null || val === undefined) return null;
   const n = typeof val === "string" ? parseFloat(val) : Number(val);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Normalized alignment fields for one enriched row (selected program + school state). */
+function alignmentFields(row: Record<string, unknown>): {
+  cipCode: string | null;
+  degreeLevel: string | null;
+  stateCode: string | null;
+} {
+  return {
+    cipCode: normalizeCipCode(row.sel_program_cip),
+    degreeLevel:
+      normalizeDegreeBucket(row.sel_program_credential_level) ??
+      normalizeDegreeBucket(row.sel_program_credential_title),
+    stateCode: normalizeStateCode(row.state),
+  };
 }
 
 /** Format a raw ratio (e.g. 14.2) as "14:1", matching /programs' convention. */
@@ -316,6 +341,7 @@ async function getSelectedEnriched(
         selProg.cip_code        AS sel_program_cip,
         selProg.credential_level AS sel_program_credential_level,
         selProg.degree_level_category AS sel_program_degree_level,
+        selProg.credential_title AS sel_program_credential_title,
         progEarn.year_10        AS sel_program_earnings,
         progEarn.year_10_method AS sel_program_earnings_method
      FROM sel
@@ -402,7 +428,7 @@ async function getSelectedEnriched(
           ) dl
      ) degLevels ON TRUE
      LEFT JOIN LATERAL (
-        SELECT title, cip_code, credential_level, degree_level_category
+        SELECT title, cip_code, credential_level, credential_title, degree_level_category
           FROM programs
          WHERE unitid = sel.unitid
            AND $2::text IS NOT NULL
@@ -503,6 +529,7 @@ async function getSelectedEnriched(
       schoolUrl: normalizeUrl(row.school_url),
       schoolType: toStr(row.school_type),
       accreditor: toStr(row.accreditor),
+      ...alignmentFields(row),
       academics: {
         satRangeLow: sat25,
         satRangeHigh: sat75,
@@ -1064,6 +1091,7 @@ async function getMatrixEnrichedRows(
         selProg.cip_code        AS sel_program_cip,
         selProg.credential_level AS sel_program_credential_level,
         selProg.degree_level_category AS sel_program_degree_level,
+        selProg.credential_title AS sel_program_credential_title,
         progEarn.year_10        AS sel_program_earnings,
         progEarn.year_10_method AS sel_program_earnings_method
      FROM entries
@@ -1147,7 +1175,7 @@ async function getMatrixEnrichedRows(
         -- Match THIS row's own cip_code/credential_level (not a title ILIKE
         -- against a single query param) so every row resolves independently
         -- in this one query.
-        SELECT title, cip_code, credential_level, degree_level_category
+        SELECT title, cip_code, credential_level, credential_title, degree_level_category
           FROM programs
          WHERE unitid = entries.unitid
            AND entries.cip_code IS NOT NULL
@@ -1244,6 +1272,7 @@ async function getMatrixEnrichedRows(
       schoolUrl: normalizeUrl(row.school_url),
       schoolType: toStr(row.school_type),
       accreditor: toStr(row.accreditor),
+      ...alignmentFields(row),
       academics: {
         satRangeLow: sat25,
         satRangeHigh: sat75,

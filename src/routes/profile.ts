@@ -5,6 +5,11 @@ import { verifyToken } from "../middleware/auth";
 import { normalizeDegreeLevel } from "../constants/degreeLevels";
 import { HOUSEHOLD_INCOME_RANGES } from "../constants/householdIncome";
 import { getValidStateCodes } from "../db/statesCache";
+import {
+  normalizeDegreeBucket,
+  normalizeStateCode,
+  programLabelsToCipFamilies,
+} from "../utils/preferenceAlignment";
 import { ApiError, AuthRequest } from "../types/user";
 import { sendEmailChangeRejection, sendError, sendInternalError } from "../utils/apiError";
 import {
@@ -83,11 +88,24 @@ async function buildProfileResponse(
 
   const { password_hash, preferred_states, preferred_programs, ...rest } =
     result.rows[0];
-  // Return the child-table sets under the snake_case keys the frontend reads.
+  const states: string[] = preferred_states ?? [];
+  const programs: string[] = preferred_programs ?? [];
+  const degreeBucket = normalizeDegreeBucket(rest.preferred_degree_level);
+  // Return the child-table sets under the snake_case keys the frontend reads,
+  // plus the normalized alignment-check fields (unknown -> []; no DB lookup).
   return {
     ...rest,
-    preferred_states: preferred_states ?? [],
-    preferred_programs: preferred_programs ?? [],
+    preferred_states: states,
+    preferred_programs: programs,
+    preferredDegreeLevels: degreeBucket ? [degreeBucket] : [],
+    preferredFieldCipFamilies: programLabelsToCipFamilies(programs),
+    preferredStateCodes: [
+      ...new Set(
+        states
+          .map(normalizeStateCode)
+          .filter((c): c is string => c !== null),
+      ),
+    ].sort(),
   };
 }
 
