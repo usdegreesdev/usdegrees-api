@@ -44,7 +44,7 @@ test("GET /programs/:unitid academics.graduation_rate", async () => {
 });
 
 test("route SQL never selects the deprecated completion columns", () => {
-  for (const f of ["programs.ts", "overviewDetails.ts", "compare.ts"]) {
+  for (const f of ["programs.ts", "overviewDetails.ts", "../services/compare/enrichmentSql.ts"]) {
     const code = fs.readFileSync(path.join(__dirname, f), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "").replace(/--.*$/gm, "");
     assert.ok(code.includes("grad_rate_150nt_pct"), `${f} does not read grad_rate_150nt_pct`);
