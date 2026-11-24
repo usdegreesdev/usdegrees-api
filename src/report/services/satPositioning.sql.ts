@@ -12,6 +12,7 @@ export const SAT_COLLEGES_SQL = `
          a.school_min_range,
          a.school_max_range,
          a.publish_publicly,
+         a.admission_rate,
          dc.category,
          dc.badge_label,
          dc.badge_color,

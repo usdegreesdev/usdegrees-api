@@ -190,8 +190,6 @@ test("category recognition and page-4 reason", () => {
     student: { display_name: "S", sat_score: 1300, income_bracket_label: null },
   };
   const n2 = buildFallbackNarrative(payload);
-  assert.ok(n2.score_position_note.includes(`Scores Considered If Submitted: ${FIT_NA_SUBMITTED_REASON} (Grove).`));
-  assert.ok(n2.score_position_note.includes("Fit is not applicable at Open U."));
   assert.ok(n2.fit_sentences[0].sentence.startsWith(`Scores Considered If Submitted: ${FIT_NA_SUBMITTED_REASON}`));
   assert.ok(n2.fit_sentences[1].sentence.startsWith("Academic Fit: Not applicable."));
 });

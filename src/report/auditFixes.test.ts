@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveEarningsPath, type EarningsCohortRow } from "../services/earnings.service";
-import { dataYearsLine, monthYearFromIso } from "./utils/dataVintage";
+import { dataYearsLine, dataYearsSentence, monthYearFromIso, PSEO_EARNINGS_DISCLAIMER } from "./utils/dataVintage";
 import { findBannedPhrases } from "./services/reportPrompt";
 import { schoolSizeLabel } from "./config/sizeCategories.config";
 import { cleanProgramName } from "./utils/programName";
@@ -41,8 +41,14 @@ test("earnings path: no usable year 10 → no path, never another cohort's value
 
 test("data years come from the table; a metric with no row is left out", () => {
   const line = dataYearsLine({ release_date: "2026-11-02", years: { earnings_6yr_after_entry: 2022, median_debt_completers: 2024 } });
-  assert.equal(line, "earnings (6 and 10 years after entry) 2022; median federal debt of completers 2024");
+  assert.equal(line, "school-wide earnings 6 years after entry 2022; median federal debt of completers 2024");
   assert.equal(dataYearsLine({ release_date: null, years: {} }), null);
+  const sentence = dataYearsSentence({ release_date: "2026-11-02", years: { earnings_6yr_after_entry: 2022, earnings_10yr_after_entry: 2022 } })!;
+  assert.ok(!sentence.includes("6 and 10 years"));
+  assert.ok(sentence.includes("school-wide earnings 6 years after entry 2022"));
+  assert.equal(sentence.split(PSEO_EARNINGS_DISCLAIMER).length - 1, 1);
+  assert.ok(sentence.endsWith(PSEO_EARNINGS_DISCLAIMER));
+  assert.equal(dataYearsSentence({ release_date: null, years: {} }), null);
   assert.equal(monthYearFromIso("2026-11-02"), "November 2026");
   assert.equal(monthYearFromIso(null), null);
 });

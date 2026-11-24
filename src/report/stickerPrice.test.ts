@@ -104,7 +104,10 @@ test("rendered cost page", () => {
   }
   assert.ok(!text.includes("$6,720"));
   assert.ok(!text.includes("$0"));
-  assert.ok(text.includes(STICKER_FOOTNOTE.replace(/'/g, "&#x27;")) || text.includes(STICKER_FOOTNOTE));
+  // The cost-of-attendance sentence is wrapped in <strong>; compare the text without tags.
+  const plain = html.replace(/<\/?strong>/g, "");
+  assert.ok(plain.includes(STICKER_FOOTNOTE.replace(/'/g, "&#x27;")) || plain.includes(STICKER_FOOTNOTE));
+  assert.ok(html.includes("<strong>College Scorecard"));
 });
 
 test("methodology block", () => {

@@ -15,7 +15,6 @@ export interface PageProps {
 
 export default function ExecutiveSummary({
   payload,
-  narrative,
   reportId,
   generatedDate,
   pageNumber,
@@ -25,18 +24,6 @@ export default function ExecutiveSummary({
     <div style={pageStyle}>
       <div>
         <PageHeader sectionLabel="SECTION 02 · EXECUTIVE SUMMARY" title="Executive Summary" />
-
-        {/* Narrative Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "16px", marginBottom: "22px" }}>
-          <div style={{ backgroundColor: theme.color.panelBgAlt, borderRadius: "12px", padding: "18px", border: `1px solid ${theme.color.goldSoft}`, borderLeft: `3px solid ${theme.color.gold}` }}>
-            <h3 style={{ fontSize: "13px", fontWeight: 700, color: theme.color.gold, margin: "0 0 8px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Test Score Position
-            </h3>
-            <p style={{ fontSize: "12.5px", lineHeight: "1.6", margin: 0, color: theme.color.navy, fontWeight: 500 }}>
-              {narrative.score_position_note}
-            </p>
-          </div>
-        </div>
 
         {/* Per-school figures in the order the student entered the schools —
             never sorted, never labelled higher or lower. */}

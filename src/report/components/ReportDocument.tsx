@@ -3,10 +3,10 @@ import Cover from "./Cover";
 import AnalystNote from "./AnalystNote";
 import ExecutiveSummary from "./ExecutiveSummary";
 import StudentProfile from "./StudentProfile";
-import CareerOutcomes from "./CareerOutcomes";
+import CareerOutcomes, { careerOutcomesPageCount } from "./CareerOutcomes";
 import { RecommendationQuestion } from "./Recommendation";
 import CampusStudents from "./CampusStudents";
-import Athletics from "./Athletics";
+import Athletics, { athleticsPageCount } from "./Athletics";
 import TuitionCosts from "./TuitionCosts";
 import SatPositioning, { satPositioningPageCount } from "./SatPositioning";
 import SourcesMethodology from "./SourcesMethodology";
@@ -32,8 +32,19 @@ export default function ReportDocument({
   // numbering. Total includes every rendered page, Cover included. The SAT
   // section paginates by content (satPages); every later page is offset by it.
   const satPages = satPositioningPageCount(payload.sat_positioning);
-  const totalPages = 11 + satPages;
+  // Sections 04 and 07 can each spill onto a continuation page, so later page
+  // numbers are laid out sequentially from the page counts rather than fixed.
+  const careerPages = careerOutcomesPageCount(payload.schools.length);
+  const athleticsPages = athleticsPageCount(payload.college_details.length);
+  const totalPages = 9 + careerPages + satPages + athleticsPages;
   const chrome = { reportId, generatedDate, totalPages };
+
+  const satFirstPage = 6 + careerPages;
+  const campusPage = satFirstPage + satPages;
+  const athleticsPage = campusPage + 1;
+  const tuitionPage = athleticsPage + athleticsPages;
+  const recommendationPage = tuitionPage + 1;
+  const methodologyPage = recommendationPage + 1;
 
   return (
     <div style={{ margin: 0, padding: 0, boxSizing: "border-box" }}>
@@ -72,19 +83,19 @@ export default function ReportDocument({
         payload={payload}
         reportId={reportId}
         generatedDate={generatedDate}
-        firstPageNumber={7}
+        firstPageNumber={satFirstPage}
         totalPages={totalPages}
       />
-      <CampusStudents payload={payload} pageNumber={7 + satPages} {...chrome} />
-      <Athletics payload={payload} pageNumber={8 + satPages} {...chrome} />
-      <TuitionCosts payload={payload} pageNumber={9 + satPages} {...chrome} />
+      <CampusStudents payload={payload} pageNumber={campusPage} {...chrome} />
+      <Athletics payload={payload} pageNumber={athleticsPage} {...chrome} />
+      <TuitionCosts payload={payload} pageNumber={tuitionPage} {...chrome} />
       <RecommendationQuestion
         payload={payload}
         narrative={narrative}
-        pageNumber={10 + satPages}
+        pageNumber={recommendationPage}
         {...chrome}
       />
-      <Methodology payload={payload} pageNumber={11 + satPages} {...chrome} />
+      <Methodology payload={payload} pageNumber={methodologyPage} {...chrome} />
     </div>
   );
 }

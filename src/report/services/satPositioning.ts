@@ -16,6 +16,7 @@ import {
   SAT_SCALE,
   isSubmittedOnlyCategory,
 } from "../config/satPositioning.config";
+import { applySelectiveRule } from "../utils/selectiveSentence";
 
 // ---------------- types ----------------
 export type SatStatus = "below" | "within" | "above";
@@ -51,6 +52,8 @@ export interface SatCollegeInput {
   schoolMinRange: number | null;
   schoolMaxRange: number | null;
   publishPublicly: boolean | null;
+  /** Admit rate as page 5 prints it (rounded 0–100 percent); null when missing or not published. */
+  admitRatePct?: number | null;
   /** The college's own category row (null when sat_disclosure_category is null/unknown). */
   category: SatCategoryRow | null;
 }
@@ -290,7 +293,9 @@ export function buildSatPositioning(
             : null,
         submittedOnly,
         supportingCopy: submittedOnly ? (c.category?.supporting_copy ?? null) : null,
-        disclaimerText: submittedOnly ? (c.category?.disclaimer_text ?? null) : null,
+        disclaimerText: submittedOnly
+          ? applySelectiveRule(c.category?.disclaimer_text ?? null, c.admitRatePct)
+          : null,
         contactGuidance: submittedOnly
           ? (c.category?.contact_guidance ?? defaultCategory.contact_guidance ?? null)
           : null,
@@ -305,7 +310,7 @@ export function buildSatPositioning(
       displayOrder: c.displayOrder,
       badge: toBadge(cat),
       supportingCopy: cat.supporting_copy,
-      disclaimerText: cat.disclaimer_text ?? null,
+      disclaimerText: applySelectiveRule(cat.disclaimer_text ?? null, c.admitRatePct),
       contactGuidance: cat.contact_guidance ?? defaultCategory.contact_guidance ?? "",
       websiteUrl: closed || suppressed ? null : normalizeWebsiteUrl(c.schoolUrl),
     });

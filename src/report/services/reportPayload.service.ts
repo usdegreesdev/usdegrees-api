@@ -349,7 +349,8 @@ export async function fetchCampus(unitid: number) {
   const [studentsResult, completionResult, levelResult] = await Promise.all([
     pool.query(
       `SELECT undergrad_12_month, grad_12_month, student_faculty_ratio,
-              retention_rate, demographics_men, demographics_women, size
+              retention_rate, demographics_men, demographics_women,
+              faculty_men, faculty_women, size
          FROM students WHERE unitid = $1 LIMIT 1`,
       [unitid],
     ),
@@ -390,6 +391,8 @@ export async function fetchCampus(unitid: number) {
     retention_rate: wholePct("students.retention_rate", data?.retention_rate),
     demographics_men_pct: oneDecimalPct("students.demographics_men", data?.demographics_men),
     demographics_women_pct: oneDecimalPct("students.demographics_women", data?.demographics_women),
+    faculty_men_pct: oneDecimalPct("students.faculty_men", data?.faculty_men),
+    faculty_women_pct: oneDecimalPct("students.faculty_women", data?.faculty_women),
     // Label and number both come from students.size (sizeCategories.config).
     size: num(data?.size),
     size_category: schoolSizeLabel(num(data?.size)),

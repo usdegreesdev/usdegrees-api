@@ -77,10 +77,25 @@ router.get("/schools-for-program", ...catalogGuard, async (req: Request, res: Re
 
   const params: (string | number)[] = [cipCode, credentialTitle];
   let nameSql = "";
+  let orderSql = "s.name ASC, s.unitid ASC";
+  let filterParamCount = 2;
   if (q) {
-    // Escape LIKE wildcards so q is matched literally.
-    params.push(`%${q.replace(/[\\%_]/g, "\\$&")}%`);
-    nameSql = ` AND s.name ILIKE $${params.length}`;
+    // Every word must appear somewhere in the name (any order), so partial /
+    // multi-word input like "univ calif" still finds "University of California".
+    // LIKE wildcards are escaped so each word is matched literally.
+    const esc = (v: string) => v.replace(/[\\%_]/g, "\\$&");
+    const tokens = q.split(/\s+/).filter(Boolean).slice(0, 6);
+    for (const t of tokens) {
+      params.push(`%${esc(t)}%`);
+      nameSql += ` AND s.name ILIKE $${params.length}`;
+    }
+    filterParamCount = params.length;
+    // Rank: name starts with the query, then a word starts with it, then the rest.
+    params.push(`${esc(q)}%`);
+    const prefixIdx = params.length;
+    params.push(`% ${esc(q)}%`);
+    const wordIdx = params.length;
+    orderSql = `CASE WHEN s.name ILIKE $${prefixIdx} THEN 0 WHEN s.name ILIKE $${wordIdx} THEN 1 ELSE 2 END, s.name ASC, s.unitid ASC`;
   }
   const fromWhere = `
       FROM schools s
@@ -93,11 +108,14 @@ router.get("/schools-for-program", ...catalogGuard, async (req: Request, res: Re
     const [data, count] = await Promise.all([
       pool.query(
         `SELECT s.unitid, s.name AS school_name, s.city, s.state ${fromWhere}
-          ORDER BY s.name ASC, s.unitid ASC
+          ORDER BY ${orderSql}
           LIMIT ${paging.limit} OFFSET ${paging.offset}`,
         params,
       ),
-      pool.query<{ total: string }>(`SELECT COUNT(*) AS total ${fromWhere}`, params),
+      pool.query<{ total: string }>(
+        `SELECT COUNT(*) AS total ${fromWhere}`,
+        params.slice(0, filterParamCount),
+      ),
     ]);
     res.json({
       results: data.rows.map((r) => ({

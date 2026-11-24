@@ -6,6 +6,7 @@
  * lives in satPositioning.ts.
  */
 import pool from "../../db/client";
+import { toFraction } from "../../utils/fieldScale";
 import {
   SAT_COLLEGES_SQL,
   SAT_DEFAULT_CATEGORY_SQL,
@@ -103,6 +104,12 @@ export async function loadSatPositioning(
       schoolMinRange: num(r.school_min_range),
       schoolMaxRange: num(r.school_max_range),
       publishPublicly: r.publish_publicly ?? null,
+      // Same derivation as page 5 (reportPayload.service): 0–1 fraction →
+      // rounded percent, null when missing or suppressed.
+      admitRatePct: (() => {
+        const f = toFraction("admissions.admission_rate", r.admission_rate);
+        return r.publish_publicly !== false && f != null ? Math.round(f * 100) : null;
+      })(),
       category: r.category
         ? {
             category: r.category,

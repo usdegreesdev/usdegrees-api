@@ -44,7 +44,7 @@ const PAYLOAD: any = {
   federal_aid_fetched_on: "2026-11-16", college_details: [],
 };
 const NARR: any = {
-  executive_summary: "x", score_position_note: "SAT sentence stays.", two_minute_lines: [],
+  executive_summary: "x", two_minute_lines: [],
   net_price_note: "n", earnings_paragraph: "e", debt_burden_paragraph: "d",
 };
 const props = { payload: PAYLOAD, narrative: NARR, reportId: "T", generatedDate: "t", pageNumber: 1, totalPages: 1 };
@@ -96,7 +96,6 @@ test("pages 4, 5, 6 render with reasons and no range text", () => {
   console.log("\n--- PAGE 4 ---\n" + p4 + "\n--- PAGE 5 ---\n" + p5 + "\n--- PAGE 6 ---\n" + p6);
   assert.ok(p4.includes("Net price Eastern Illinois University $9,813 · Grove City College takes no federal student aid · Illinois Eastern Community Colleges $5,965"));
   assert.ok(p4.includes("Figures published: net price 2 of 3, program earnings 1 of 3, school-wide debt 2 of 3."));
-  assert.ok(p4.includes("SAT sentence stays."));
   for (const t of [p4, p5, p6]) {
     assert.ok(!RANGE_WORDS.test(t));
     assert.ok(!t.includes("$0 *") && !t.includes("may indicate"));

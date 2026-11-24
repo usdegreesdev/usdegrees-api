@@ -52,7 +52,8 @@ export async function loadDataVintage(db: Queryable): Promise<DataVintage> {
 
 /** Metrics printed in the report, in order, with the label shown beside the year. */
 const PRINTED: Array<{ label: string; metrics: string[] }> = [
-  { label: "earnings (6 and 10 years after entry)", metrics: ["earnings_6yr_after_entry", "earnings_10yr_after_entry"] },
+  // Only the 6-years-after-entry figure is displayed (in the debt-to-income ratio); the 10-year one is not.
+  { label: "school-wide earnings 6 years after entry", metrics: ["earnings_6yr_after_entry"] },
   { label: "median federal debt of completers", metrics: ["median_debt_completers"] },
   { label: "graduation rate", metrics: ["graduation_rate_4yr_150nt", "graduation_rate_lt4yr_150nt"] },
   { label: "cost of attendance and tuition", metrics: ["cost_of_attendance", "tuition_in_state"] },
@@ -61,7 +62,7 @@ const PRINTED: Array<{ label: string; metrics: string[] }> = [
   { label: "enrollment", metrics: ["student_size"] },
 ];
 
-/** "earnings (6 and 10 years after entry) 2022; median federal debt of completers 2024; …" */
+/** "school-wide earnings 6 years after entry 2022; median federal debt of completers 2024; …" */
 export function dataYearsLine(v: DataVintage | null | undefined): string | null {
   if (!v) return null;
   const parts: string[] = [];
@@ -72,10 +73,14 @@ export function dataYearsLine(v: DataVintage | null | undefined): string | null 
   return parts.length ? parts.join("; ") : null;
 }
 
+/** Printed once after the data-years sentence so program and school-wide earnings are not conflated. */
+export const PSEO_EARNINGS_DISCLAIMER =
+  "Program earnings are from Census PSEO, measured after graduation for the cohort shown in the table (not the Scorecard data year above), and are not comparable to the school-wide figure.";
+
 /** Plain sentence for the methodology page and the earnings/debt page. */
 export function dataYearsSentence(v: DataVintage | null | undefined): string | null {
   const line = dataYearsLine(v);
   if (!line) return null;
   const rel = monthYearFromIso(v?.release_date);
-  return `Data years (College Scorecard): ${line}.${rel ? ` The database holds the Scorecard release of ${rel}; that is when the files were published, not the year the figures describe.` : ""}`;
+  return `Data years (College Scorecard): ${line}.${rel ? ` The database holds the Scorecard release of ${rel}; that is when the files were published, not the year the figures describe.` : ""} ${PSEO_EARNINGS_DISCLAIMER}`;
 }

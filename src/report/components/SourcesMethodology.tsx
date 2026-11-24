@@ -51,7 +51,7 @@ const SOURCES: SourceRow[] = [
     notes: "NCES public lookup tool",
   },
   {
-    source: "Athletics Disclosure (EADA)",
+    source: "Equity in Athletics Disclosure (EADA)",
     domain: "ope.ed.gov/athletics",
     usedFor:
       "Athletics data is sourced from the U.S. Department of Education's Equity in Athletics Disclosure Act (EADA) database.",

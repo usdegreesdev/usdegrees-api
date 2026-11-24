@@ -4,6 +4,7 @@ import { theme } from "./theme";
 import { pageStyle, PageHeader, PageFooter } from "./PageChrome";
 import NoAidBox from "./NoAidBox";
 import GradRateCell from "./GradRateCell";
+import { BoldValues } from "./BoldValues";
 import {
   schoolFigures,
   takesNoFederalAid,
@@ -156,7 +157,7 @@ export default function StudentProfile({
           }}
         >
           <p style={{ margin: 0, color: theme.color.ink }}>
-            {narrative.net_price_note}
+            <BoldValues text={narrative.net_price_note} />
           </p>
         </div>
 

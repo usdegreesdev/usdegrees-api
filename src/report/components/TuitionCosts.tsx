@@ -13,6 +13,10 @@ export interface TuitionCostsProps {
   totalPages: number;
 }
 
+// Bolded inside the sticker-price footnote (text itself is unchanged).
+const COA_EMPHASIS =
+  "College Scorecard's average cost of attendance is a different measure: it averages living costs across students who live on campus, off campus and with family, so it can be lower or higher than either scenario";
+
 function Scenario({ s }: { s: StickerScenario }) {
   if (s.published) return <>{money(s.total)}</>;
   return (
@@ -196,7 +200,12 @@ export default function TuitionCosts({
         </table>
 
         <p style={{ ...note, margin: 0 }}>
-          {STICKER_FOOTNOTE}
+          {STICKER_FOOTNOTE.split(COA_EMPHASIS).map((part, i, arr) => (
+            <React.Fragment key={i}>
+              {part}
+              {i < arr.length - 1 && <strong>{COA_EMPHASIS}</strong>}
+            </React.Fragment>
+          ))}
         </p>
         <p style={{ ...note, margin: "8px 0 0 0" }}>
           Net Price is the average annual price after grants and scholarships for

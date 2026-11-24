@@ -158,6 +158,9 @@ export interface C1LitePayload {
       retention_rate: number | null;
       demographics_men_pct: number | null;
       demographics_women_pct: number | null;
+      // Faculty gender split (students.faculty_men / faculty_women), 0–100.
+      faculty_men_pct?: number | null;
+      faculty_women_pct?: number | null;
       no_graduate_programs: boolean; // grad_12_month null AND max programs.credential_level <= 4
       size: number | null; // students.size — the number the size label is based on
       size_category: string | null;
@@ -193,7 +196,6 @@ export interface C1LitePayload {
 // ---------------- NARRATIVE (what Gemini returns) ----------------
 export interface C1LiteNarrative {
   two_minute_lines: Array<{ school: string; line: string }>;
-  score_position_note: string;
   executive_summary: string;
   analyst_note: string;
   net_price_note: string;
@@ -303,9 +305,6 @@ WRITE ONLY THESE (lengths are ceilings):
   LEHD data" (not "program earnings" and not a bare vintage year). Use net_price_bracket,
   called "Net price", as the cost figure (never sticker_price); if it is null, say net price is
   not published. ≤40 words each.
-- score_position_note: name any above_p75 school ("above the 75th percentile"), any below_p25
-  school ("below the 25th percentile"), and any school whose fit is "Not applicable". Nothing
-  else. Never use the words merit, critical, ROI, lifetime, "may qualify" or "3 in 4". ≤110 words.
 - net_price_note: state the bracket label if present. ≤90 words.
 - fit_sentences: one per school — bands if present, disclosure copy, merit/reach framing, and
   the Admission Fit Estimate disclaimer (see BRANCHES). ≤70 words each.
@@ -354,7 +353,6 @@ export const GEMINI_RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
     two_minute_lines: { type: "ARRAY", items: schoolLine },
-    score_position_note: { type: "STRING" },
     executive_summary: { type: "STRING" },
     analyst_note: { type: "STRING" },
     net_price_note: { type: "STRING" },
@@ -364,7 +362,7 @@ export const GEMINI_RESPONSE_SCHEMA = {
     plain_english_question: { type: "STRING" },
   },
   required: [
-    "two_minute_lines", "score_position_note", "executive_summary", "analyst_note",
+    "two_minute_lines", "executive_summary", "analyst_note",
     "net_price_note", "fit_sentences", "earnings_paragraph", "debt_burden_paragraph",
     "plain_english_question",
   ],
@@ -419,34 +417,12 @@ export function gradRateSummaryFor(payload: C1LitePayload): string {
 }
 
 export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative {
-  const { schools, derived_flags, student } = payload;
+  const { schools, student } = payload;
 
   const two_minute_lines = schools.map((s) => ({
     school: s.display_name,
     line: `${costClause(s)}; Program Earnings from PSEO data ${money(s.program_earnings)}.`,
   }));
-
-  const findingParts: string[] = [];
-  if (derived_flags.above_p75_schools.length) {
-    findingParts.push(`Student's SAT is above the 75th percentile at ${derived_flags.above_p75_schools.join(", ")}.`);
-  }
-  if (derived_flags.below_p25_schools.length) {
-    findingParts.push(`Student's SAT is below the 25th percentile at ${derived_flags.below_p25_schools.join(", ")}.`);
-  }
-  const naSchools = schools.filter((s) => s.fit_label === "Not applicable");
-  const naSubmitted = naSchools.filter((s) => isSubmittedOnlyCategory(s.sat_data_category));
-  const notApplicable = naSchools.filter((s) => !isSubmittedOnlyCategory(s.sat_data_category)).map((s) => s.display_name);
-  if (notApplicable.length) {
-    findingParts.push(`Fit is not applicable at ${notApplicable.join(", ")}.`);
-  }
-  // Same badge wording as the SAT positioning page (admission_disclosure_categories.badge_label).
-  for (const label of [...new Set(naSubmitted.map((s) => s.disclosure.badge_label))]) {
-    const names = naSubmitted.filter((s) => s.disclosure.badge_label === label).map((s) => s.display_name);
-    findingParts.push(`${label}: ${FIT_NA_SUBMITTED_REASON} (${names.join(", ")}).`);
-  }
-  const score_position_note = findingParts.length
-    ? findingParts.join(" ")
-    : "No score-position or fit-unavailable flags apply to the selected schools; see the cost and earnings tables for figures.";
 
   const executive_summary = `This report compares ${schools.length} program${schools.length === 1 ? "" : "s"} for ${student.display_name} on published net price, admissions, program earnings, and school-wide median federal debt of completers — it does not rank or recommend a school. ${
     student.sat_score == null ? "No SAT score was provided, so academic fit is not shown." : "Academic fit is shown where the disclosure category allows it."
@@ -517,7 +493,6 @@ export function buildFallbackNarrative(payload: C1LitePayload): C1LiteNarrative 
 
   return {
     two_minute_lines,
-    score_position_note,
     executive_summary,
     analyst_note,
     net_price_note,

@@ -733,7 +733,7 @@ export default function SatPositioning({
         <div key={i} style={pageStyle}>
           <div>
             <PageHeader
-              sectionLabel={`SECTION 05A · ${satCopy.eyebrow}`}
+              sectionLabel={`SECTION 05 · ${satCopy.eyebrow}`}
               title={titleOf(block)}
             />
             <SatPageContent block={block} items={items} pageIndex={i} />
