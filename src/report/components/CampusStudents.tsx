@@ -177,7 +177,7 @@ export default function CampusStudents({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 06 · CAMPUS & STUDENTS"
+          sectionLabel="SECTION 07 · CAMPUS & STUDENTS"
           title="Campus & Student Body"
         />
 

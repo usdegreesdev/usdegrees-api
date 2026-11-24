@@ -23,7 +23,7 @@ export default function ExecutiveSummary({
   return (
     <div style={pageStyle}>
       <div>
-        <PageHeader sectionLabel="SECTION 02 · EXECUTIVE SUMMARY" title="Executive Summary" />
+        <PageHeader sectionLabel="SECTION 03 · EXECUTIVE SUMMARY" title="Executive Summary" />
 
         {/* Per-school figures in the order the student entered the schools —
             never sorted, never labelled higher or lower. */}

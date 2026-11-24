@@ -102,7 +102,7 @@ export default function TuitionCosts({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 08 · TUITION & COSTS"
+          sectionLabel="SECTION 05 · TUITION & COSTS"
           title="Tuition & Cost of Attendance"
         />
 

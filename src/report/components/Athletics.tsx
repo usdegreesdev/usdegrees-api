@@ -274,8 +274,8 @@ export default function Athletics({
             <PageHeader
               sectionLabel={
                 pageIdx === 0
-                  ? "SECTION 07 · ATHLETICS"
-                  : "SECTION 07 · ATHLETICS (continued)"
+                  ? "SECTION 08 · ATHLETICS"
+                  : "SECTION 08 · ATHLETICS (continued)"
               }
               title="Athletics Program Overview"
             />

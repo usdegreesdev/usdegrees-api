@@ -39,11 +39,15 @@ export default function ReportDocument({
   const totalPages = 9 + careerPages + satPages + athleticsPages;
   const chrome = { reportId, generatedDate, totalPages };
 
-  const satFirstPage = 6 + careerPages;
-  const campusPage = satFirstPage + satPages;
+  // Order: Cover, Analyst note, Sources, Student profile, Executive summary,
+  // SAT positioning, Tuition, Career outcomes, Campus, Athletics,
+  // Recommendation, Methodology.
+  const satFirstPage = 6;
+  const tuitionPage = satFirstPage + satPages;
+  const careerPage = tuitionPage + 1;
+  const campusPage = careerPage + careerPages;
   const athleticsPage = campusPage + 1;
-  const tuitionPage = athleticsPage + athleticsPages;
-  const recommendationPage = tuitionPage + 1;
+  const recommendationPage = athleticsPage + athleticsPages;
   const methodologyPage = recommendationPage + 1;
 
   return (
@@ -61,22 +65,16 @@ export default function ReportDocument({
         {...chrome}
       />
       <SourcesMethodology payload={payload} pageNumber={3} {...chrome} />
-      <ExecutiveSummary
+      <StudentProfile
         payload={payload}
         narrative={narrative}
         pageNumber={4}
         {...chrome}
       />
-      <StudentProfile
+      <ExecutiveSummary
         payload={payload}
         narrative={narrative}
         pageNumber={5}
-        {...chrome}
-      />
-      <CareerOutcomes
-        payload={payload}
-        narrative={narrative}
-        pageNumber={6}
         {...chrome}
       />
       <SatPositioning
@@ -86,9 +84,15 @@ export default function ReportDocument({
         firstPageNumber={satFirstPage}
         totalPages={totalPages}
       />
+      <TuitionCosts payload={payload} pageNumber={tuitionPage} {...chrome} />
+      <CareerOutcomes
+        payload={payload}
+        narrative={narrative}
+        pageNumber={careerPage}
+        {...chrome}
+      />
       <CampusStudents payload={payload} pageNumber={campusPage} {...chrome} />
       <Athletics payload={payload} pageNumber={athleticsPage} {...chrome} />
-      <TuitionCosts payload={payload} pageNumber={tuitionPage} {...chrome} />
       <RecommendationQuestion
         payload={payload}
         narrative={narrative}

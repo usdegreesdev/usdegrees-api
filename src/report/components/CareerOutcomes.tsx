@@ -276,7 +276,7 @@ export default function CareerOutcomes({
       <div style={pageStyle}>
         <div>
           <PageHeader
-            sectionLabel="SECTION 04 · EARNINGS & DEBT"
+            sectionLabel="SECTION 06 · EARNINGS & DEBT"
             title="Program Earnings & School-wide Debt"
           />
 
@@ -321,7 +321,7 @@ export default function CareerOutcomes({
         <div style={pageStyle}>
           <div>
             <PageHeader
-              sectionLabel="SECTION 04A · EARNINGS & DEBT"
+              sectionLabel="SECTION 06 · EARNINGS & DEBT"
               title="Program Earnings & School-wide Debt"
             />
             {renderTable(secondRows, FIRST_PAGE_ROWS_WHEN_SPLIT)}

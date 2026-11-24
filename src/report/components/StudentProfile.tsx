@@ -38,7 +38,7 @@ export default function StudentProfile({
     <div style={pageStyle}>
       <div>
         <PageHeader
-          sectionLabel="SECTION 03 · STUDENT PROFILE & NET PRICE"
+          sectionLabel="SECTION 02 · STUDENT PROFILE & NET PRICE"
           title="Student Profile & Net Price"
         />
 
